@@ -17,5 +17,16 @@ accurate, including realistic pneumatics, engine characteristics, and mechanics.
 ## Development Status
 The game is currently in the early stages of development.
 
+## Building
+Requires the .NET 10 SDK and a Vulkan 1.3 GPU on Windows. Install the LunarG Vulkan SDK to enable validation layers.
+
+```sh
+dotnet build
+dotnet test
+dotnet run --project src/FullThrust.Game
+```
+
+Flags: `--no-vsync`, `--no-validation`, `--no-overlay`, and `--frames N` (smoke test: full throttle, logs timing and allocation stats after a 3 s warmup, then exits).
+
 ## License
 The license is the [Unlicense](https://unlicense.org/), which allows for free use, modification, and distribution of the software.

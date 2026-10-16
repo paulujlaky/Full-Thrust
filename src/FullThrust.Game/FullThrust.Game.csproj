@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Glfw" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan.Abstractions" />
+    <PackageReference Include="Ahwoo.Brutal.ImGui" />
+    <PackageReference Include="Ahwoo.Brutal.ImGui.Backends" />
+    <PackageReference Include="Ahwoo.Brutal.ImGui.Extensions" />
+    <PackageReference Include="Ahwoo.Brutal.ShaderC" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Shaders\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FullThrust.Core\FullThrust.Core.csproj" />
+  </ItemGroup>
+
+</Project>

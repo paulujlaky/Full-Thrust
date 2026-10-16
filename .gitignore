@@ -1,3 +1,10 @@
 /docs
 
 AGENTS.md
+
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+imgui.ini

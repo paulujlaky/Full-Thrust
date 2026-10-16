@@ -1,0 +1,26 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <BrutalVersion>2026.10.2</BrutalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Ahwoo.Brutal.Numerics" Version="2026.10.1" />
+    <PackageVersion Include="Ahwoo.Brutal.Glfw" Version="2026.10.4" />
+    <PackageVersion Include="Ahwoo.Brutal.Vulkan" Version="$(BrutalVersion)" />
+    <PackageVersion Include="Ahwoo.Brutal.Vulkan.Abstractions" Version="$(BrutalVersion)" />
+    <PackageVersion Include="Ahwoo.Brutal.ImGui" Version="$(BrutalVersion)" />
+    <PackageVersion Include="Ahwoo.Brutal.ImGui.Backends" Version="$(BrutalVersion)" />
+    <PackageVersion Include="Ahwoo.Brutal.ImGui.Extensions" Version="$(BrutalVersion)" />
+    <PackageVersion Include="Ahwoo.Brutal.ShaderC" Version="$(BrutalVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+</Project>

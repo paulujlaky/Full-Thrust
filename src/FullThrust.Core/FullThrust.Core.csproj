@@ -1,0 +1,11 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Numerics" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FullThrust.Core.Tests" />
+  </ItemGroup>
+
+</Project>
