@@ -1,6 +1,8 @@
 {
   // SI units; angles in degrees. Orbital elements are relative to the world reference plane (XZ, +Y north).
   "name": "Earth-Moon",
+  // Illuminance at 1 AU; the longitude puts the sun mid-morning over the launch site at UT 0.
+  "sun": { "illuminanceLux": 120000, "color": [1.0, 0.97, 0.92], "yearLength": 31558149.8, "longitudeAtEpochDeg": 40, "angularDiameterDeg": 0.53 },
   "bodies": [
     {
       "name": "Earth",
@@ -11,6 +13,17 @@
       "axialTiltDeg": 23.44,
       "initialRotationDeg": 0,
       "debugColor": [0.18, 0.35, 0.65],
+      "terrain": {
+        "type": "continental", "seed": 33, "ocean": true,
+        "continentFrequency": 1.6, "oceanDepth": 4200, "mountainHeight": 5200,
+        "detailAmplitude": 320, "detailWavelength": 120000, "roughness": 0.8,
+        "colors": {
+          "deepWater": [0.006, 0.02, 0.045], "shallowWater": [0.02, 0.07, 0.09], "beach": [0.55, 0.5, 0.38],
+          "lowland": [0.07, 0.12, 0.035], "dry": [0.32, 0.26, 0.15], "highland": [0.2, 0.17, 0.12],
+          "rock": [0.22, 0.2, 0.18], "snow": [0.85, 0.87, 0.9]
+        },
+        "sites": [ { "name": "Launch Complex 1", "latitudeDeg": 28.5, "longitudeDeg": 0, "radius": 160, "blend": 900, "minimumHeight": 6 } ]
+      },
       "atmosphere": {
         "height": 140000,
         "surfacePressure": 101325,
@@ -37,6 +50,13 @@
       "axialTiltDeg": 6.68,
       "initialRotationDeg": 0,
       "debugColor": [0.55, 0.55, 0.52],
+      "terrain": {
+        "type": "cratered", "seed": 11,
+        "continentFrequency": 1.3, "mareDepth": 1800,
+        "detailAmplitude": 900, "detailWavelength": 200000, "roughness": 0.85,
+        "largestCrater": 60000, "smallestCrater": 30, "craterDensity": 0.55,
+        "colors": { "highland": [0.3, 0.29, 0.27], "mare": [0.1, 0.1, 0.1], "ejecta": [0.48, 0.47, 0.45], "rock": [0.22, 0.21, 0.2] }
+      },
       "orbit": {
         "semiMajorAxis": 384399000,
         "eccentricity": 0.0549,

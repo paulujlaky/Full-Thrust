@@ -1,10 +1,15 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/FullThrust.Assets/FullThrust.Assets.csproj" />
     <Project Path="src/FullThrust.Core/FullThrust.Core.csproj" />
     <Project Path="src/FullThrust.Game/FullThrust.Game.csproj" />
     <Project Path="src/FullThrust.Physics.Jolt/FullThrust.Physics.Jolt.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/FullThrust.ModelGen/FullThrust.ModelGen.csproj" />
+  </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/FullThrust.Assets.Tests/FullThrust.Assets.Tests.csproj" />
     <Project Path="tests/FullThrust.Core.Tests/FullThrust.Core.Tests.csproj" />
   </Folder>
 </Solution>

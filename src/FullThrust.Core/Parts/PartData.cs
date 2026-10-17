@@ -38,6 +38,8 @@ public sealed class PartData {
 
     public double[] Color { get; set; } = [0.8, 0.8, 0.8];
 
+    public PartModelData? Model { get; set; }
+
     public TankData? Tank { get; set; }
 
     public EngineData? Engine { get; set; }
@@ -47,6 +49,21 @@ public sealed class PartData {
     public DecouplerData? Decoupler { get; set; }
 
     public CommandData? Command { get; set; }
+
+}
+
+public sealed class PartModelData {
+
+    // Relative to data/models.
+    public string File { get; set; } = "";
+
+    // Applied before fitting, to bring the model to Y up (nose towards +Y).
+    public double[] RotationDeg { get; set; } = [0, 0, 0];
+
+    // none, uniform, stretch or length; fitting targets the part's diameter and length.
+    public string Fit { get; set; } = "none";
+
+    public double[] Offset { get; set; } = [0, 0, 0];
 
 }
 

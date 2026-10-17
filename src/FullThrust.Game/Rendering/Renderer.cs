@@ -26,14 +26,18 @@ public sealed class Renderer : IDisposable {
     private bool _recreateRequested;
     private bool _vsync;
 
-    public Renderer(VulkanContext context, int2 framebufferSize, bool vsync) {
+    public Renderer(VulkanContext context, int2 framebufferSize, bool vsync, SceneLighting lighting) {
 
         _context = context;
         _vsync = vsync;
 
+        Lighting = lighting;
+
         var device = context.Device;
 
         Swapchain = new Swapchain(context, framebufferSize, vsync);
+        Hdr = new HdrTarget(device, Swapchain.Extent);
+        Frames = new FrameResources(device);
         Capture = new FrameCapture(context);
 
         _commandPool = device.CreateCommandPool(new VkCommandPoolCreateInfo {
@@ -63,15 +67,27 @@ public sealed class Renderer : IDisposable {
 
     public Swapchain Swapchain { get; }
 
+    public HdrTarget Hdr { get; }
+
+    public FrameResources Frames { get; }
+
+    public SceneLighting Lighting { get; }
+
     public FrameCapture Capture { get; }
 
-    public float4 ClearColor { get; set; } = new(0.004f, 0.005f, 0.012f, 1);
+    // Scene stage passes are built against this; Post and Overlay passes against Swapchain.RenderPass.
+    public VkRenderPass SceneRenderPass => Hdr.RenderPass;
+
+    // Linear radiance before exposure; space is close to black.
+    public float4 ClearColor { get; set; } = new(0, 0, 0, 1);
 
     public IReadOnlyList<IRenderPass> Passes => _passes;
 
     public long FramesRendered { get; private set; }
 
     public long SwapchainRecreations { get; private set; }
+
+    public double Seconds { get; set; }
 
     public bool VSync {
 
@@ -92,7 +108,20 @@ public sealed class Renderer : IDisposable {
 
     }
 
-    public void AddPass(IRenderPass pass) => _passes.Add(pass);
+    // Passes run in stage order, then in the order they were added.
+    public void AddPass(IRenderPass pass) {
+
+        var index = _passes.Count;
+
+        while (index > 0 && _passes[index - 1].Stage > pass.Stage) {
+
+            index--;
+
+        }
+
+        _passes.Insert(index, pass);
+
+    }
 
     public void RequestRecreate() => _recreateRequested = true;
 
@@ -138,30 +167,32 @@ public sealed class Renderer : IDisposable {
 
         device.ResetFences([fence]);
 
+        WriteFrameUniforms(view, projection);
+
         var cmd = _commandBuffers[_frame];
 
         cmd.Reset(VkCommandBufferResetFlags.None);
         cmd.Begin(new VkCommandBufferBeginInfo { Flags = VkCommandBufferUsageFlags.OneTimeSubmitBit });
 
-        BeginRenderPass(cmd, imageIndex);
-
         var extent = Swapchain.Extent;
-
-        cmd.SetViewport(0, [new VkViewport { X = 0, Y = 0, Width = extent.Width, Height = extent.Height, MinDepth = 0, MaxDepth = 1 }]);
-        cmd.SetScissor(0, [new VkRect2D(extent)]);
-
-        var frame = new FrameContext(cmd, _frame, extent, view, projection);
+        var frame = new FrameContext(cmd, _frame, extent, view, projection, Frames.Set(_frame));
 
         for (var i = 0; i < _passes.Count; i++) {
 
-            if (_passes[i].Enabled) {
+            if (_passes[i].Enabled && _passes[i] is IFrameUploader uploader) {
 
-                _passes[i].Record(frame);
+                uploader.Upload(frame);
 
             }
 
         }
 
+        BeginRenderPass(cmd, Hdr.RenderPass, Hdr.Framebuffer, extent, ClearColor);
+        RecordStages(frame, RenderStage.Scene, RenderStage.Scene);
+        cmd.EndRenderPass();
+
+        BeginRenderPass(cmd, Swapchain.RenderPass, Swapchain.Framebuffer(imageIndex), extent, new float4(0, 0, 0, 1));
+        RecordStages(frame, RenderStage.Post, RenderStage.Overlay);
         cmd.EndRenderPass();
 
         if (Capture.IsPending && Swapchain.SupportsCapture) {
@@ -186,20 +217,74 @@ public sealed class Renderer : IDisposable {
 
     }
 
-    private unsafe void BeginRenderPass(CommandBuffer cmd, int imageIndex) {
+    private void RecordStages(in FrameContext frame, RenderStage first, RenderStage last) {
+
+        var cmd = frame.CommandBuffer;
+        var extent = frame.Extent;
+
+        cmd.SetViewport(0, [new VkViewport { X = 0, Y = 0, Width = extent.Width, Height = extent.Height, MinDepth = 0, MaxDepth = 1 }]);
+        cmd.SetScissor(0, [new VkRect2D(extent)]);
+
+        for (var i = 0; i < _passes.Count; i++) {
+
+            var pass = _passes[i];
+
+            if (pass.Enabled && pass.Stage >= first && pass.Stage <= last) {
+
+                pass.Record(frame);
+
+            }
+
+        }
+
+    }
+
+    private void WriteFrameUniforms(float4x4 view, float4x4 projection) {
+
+        var lighting = Lighting;
+        var viewProjection = view * projection;
+
+        float4x4.Invert(view, out var inverseView);
+        float4x4.Invert(viewProjection, out var inverseViewProjection);
+
+        var uniforms = new FrameUniforms {
+
+            View = view,
+            Projection = projection,
+            ViewProjection = viewProjection,
+            InverseViewProjection = inverseViewProjection,
+
+            CameraPosition = new float4(inverseView.W.X, inverseView.W.Y, inverseView.W.Z, 1),
+
+            SunDirection = new float4(lighting.SunDirection, lighting.SunCosAngularRadius),
+            SunIlluminance = new float4(lighting.SunIlluminance, 0),
+
+            AmbientUp = new float4(lighting.AmbientUp, 0),
+            SkyIrradiance = new float4(lighting.SkyIrradiance, 0),
+            GroundIrradiance = new float4(lighting.GroundIrradiance, 0),
+
+            Exposure = new float4(lighting.Exposure, lighting.Ev100, (float)lighting.Tonemapper, (float)(Seconds % 3600.0)),
+
+        };
+
+        Frames.Write(_frame, uniforms);
+
+    }
+
+    private static unsafe void BeginRenderPass(CommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer, VkExtent2D extent, float4 clearColor) {
 
         var clears = stackalloc VkClearValue[2];
 
-        clears[0] = new VkClearColorValue { Float32 = ClearColor };
+        clears[0] = new VkClearColorValue { Float32 = clearColor };
 
         // Reverse-Z: the far plane is depth 0.
         clears[1] = new VkClearDepthStencilValue { Depth = 0.0f, Stencil = 0 };
 
         cmd.BeginRenderPass(new VkRenderPassBeginInfo {
 
-            RenderPass = Swapchain.RenderPass,
-            Framebuffer = Swapchain.Framebuffer(imageIndex),
-            RenderArea = new VkRect2D(Swapchain.Extent),
+            RenderPass = renderPass,
+            Framebuffer = framebuffer,
+            RenderArea = new VkRect2D(extent),
             ClearValueCount = 2,
             ClearValues = clears,
 
@@ -240,6 +325,24 @@ public sealed class Renderer : IDisposable {
     private void Recreate(int2 framebufferSize) {
 
         Swapchain.Recreate(framebufferSize, _vsync);
+
+        var extent = Swapchain.Extent;
+
+        if (extent.Width != Hdr.Extent.Width || extent.Height != Hdr.Extent.Height) {
+
+            Hdr.Resize(extent);
+
+            for (var i = 0; i < _passes.Count; i++) {
+
+                if (_passes[i] is IResizeListener listener) {
+
+                    listener.OnResize(extent);
+
+                }
+
+            }
+
+        }
 
         DestroyRenderFinishedSemaphores();
         CreateRenderFinishedSemaphores();
@@ -295,6 +398,8 @@ public sealed class Renderer : IDisposable {
         device.DestroyCommandPool(_commandPool, null);
 
         Capture.Dispose();
+        Frames.Dispose();
+        Hdr.Dispose();
         Swapchain.Dispose();
 
     }

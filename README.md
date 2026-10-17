@@ -26,7 +26,7 @@ dotnet test
 dotnet run --project src/FullThrust.Game
 ```
 
-Flags: `--no-vsync`, `--no-validation`, `--no-overlay`, `--rocket pinnacle|harrier|colossus`, `--scenario launchpad|lowOrbit|lunarTransfer`, `--focus N` (0 craft, 1 Earth, 2 Moon), `--camera-distance M`, `--camera-pitch DEG`, `--time-scale X`.
+Flags: `--no-vsync`, `--no-validation`, `--no-overlay`, `--rocket pinnacle|harrier|colossus`, `--scenario launchpad|lowOrbit|lunarTransfer`, `--focus N` (0 craft, 1 Earth, 2 Moon), `--camera-distance M`, `--camera-pitch DEG`, `--camera-yaw DEG`, `--time-scale X`. For inspecting visuals, `--headlight` lights the scene from over the camera's shoulder and `--terrain-levels` tints terrain chunks by LOD level (both also in the overlay).
 
 Smoke tests: `--frames N` measures N frames after a 3 s warmup, logs timing, allocation, flight and SOI-transition stats, then exits. Add `--warp RATE`, `--throttle T`, `--stage N` (stage commands at start), `--auto-stage` (stage whenever every engine has burned out), `--sas` and `--capture-every K` (PNGs to `captures/`, or `--capture-dir`; frames just after each stage are captured too) for scripted visual checks, e.g.
 
@@ -38,6 +38,18 @@ In game, F12 saves a screenshot. Flight keys: Space stages, Shift/Ctrl throttle 
 
 ## Craft and flight
 Parts and resources are defined in `data/parts/parts.json`; the preset rockets selectable at launch are in `data/rockets/rockets.json`. Craft fly on patched-conic rails until they thrust, enter an atmosphere, approach a surface or separate stages, at which point they are simulated as Jolt rigid bodies in a double-precision frame that follows the focus craft.
+
+## Rendering
+Scene passes draw physically based (metallic-roughness) shading in linear HDR, pre-exposed for an EV100 camera, and a tonemap pass (ACES, AgX, Khronos PBR Neutral or Reinhard) resolves it to the swapchain before the overlay. The sun is defined in `data/celestial/earth-moon.json` (illuminance, colour and its yearly path), so planet rotation gives day and night. Exposure, tonemapper and ambient light are adjustable in the overlay.
+
+Craft parts are glTF models loaded with Brutal.Gltf, including base colour, metallic-roughness, normal, occlusion and emissive textures. Each part in `data/parts/parts.json` names its model and, for third-party models, how to orient and fit it to the part. Models under `data/models/parts` and `data/models/scene` are generated from `data/models/recipes.json` by the ModelGen tool. The engine bells and the Pinnacle capsule come from public-domain NASA 3D Resources models (see `data/models/nasa/NOTICE.md`).
+
+```sh
+dotnet run --project tools/FullThrust.ModelGen
+dotnet run --project tools/FullThrust.ModelGen -- inspect data/models/nasa/ssme.glb
+```
+
+Planet and Moon surfaces are procedural, double-precision height fields defined per body in `earth-moon.json`: continents and oceans, or maria and craters, plus flattened sites such as the launch complex. A cube-sphere quadtree picks chunks by camera distance, worker threads build them, and skirts hide the seams between levels. The same height function drives the collision patch under the focus craft, so craft rest on the ground they are drawn on.
 
 ## License
 The license is the [Unlicense](https://unlicense.org/), which allows for free use, modification, and distribution of the software.

@@ -95,7 +95,7 @@ public sealed class FlightModeSystem : ISystem {
 
             }
 
-            if (!isFocus && flight.Altitude < 0) {
+            if (!isFocus && flight.SurfaceAltitude < 0) {
 
                 Push(_toDestroy, ref destroyCount, entity);
 
@@ -135,7 +135,7 @@ public sealed class FlightModeSystem : ISystem {
 
         var body = _system[flight.Body];
 
-        return body.InAtmosphere(flight.Altitude) || flight.Altitude < SurfaceProximity;
+        return body.InAtmosphere(flight.Altitude) || flight.SurfaceAltitude < SurfaceProximity;
 
     }
 

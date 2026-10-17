@@ -2,6 +2,7 @@ using Brutal.Numerics;
 using FullThrust.Core.Atmosphere;
 using FullThrust.Core.Orbits;
 using FullThrust.Core.Simulation;
+using FullThrust.Core.Terrain;
 
 namespace FullThrust.Core.Bodies;
 
@@ -45,6 +46,10 @@ public sealed class CelestialBody {
 
     public IAtmosphereModel? AtmosphereModel { get; init; }
 
+    public ITerrain? Terrain { get; init; }
+
+    public TerrainData? TerrainData { get; init; }
+
     public float3 DebugColor { get; init; }
 
     public IReadOnlyList<CelestialBody> Children => ChildList;
@@ -52,6 +57,18 @@ public sealed class CelestialBody {
     public bool IsRoot => Parent is null;
 
     public bool HasAtmosphere => AtmosphereModel is not null;
+
+    // Metres above the reference radius for a body-fixed position; zero without terrain.
+    public double SurfaceHeight(double3 bodyFixed, double resolution = 1.0) => Terrain?.Height(double3.Normalize(bodyFixed), resolution) ?? 0;
+
+    // What craft rest on: the terrain, or the sea surface above submerged terrain.
+    public double GroundHeight(double3 bodyFixed, double resolution = 1.0) {
+
+        var height = SurfaceHeight(bodyFixed, resolution);
+
+        return Terrain is { HasOcean: true } ? Math.Max(height, 0) : height;
+
+    }
 
     public double SurfaceGravity => GravitationalParameter / (Radius * Radius);
 

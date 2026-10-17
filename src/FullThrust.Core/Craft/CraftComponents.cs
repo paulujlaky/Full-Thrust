@@ -90,6 +90,9 @@ public struct FlightState {
 
     public double Altitude;
 
+    // Above the terrain (or the sea surface), rather than the reference radius.
+    public double SurfaceAltitude;
+
     public AtmosphereSample Ambient;
 
     // Velocity relative to the co-rotating atmosphere.

@@ -23,10 +23,11 @@ public readonly struct CraftPlacement {
 
     public Entity Spawn(World world, RocketPreset rocket) => CraftAssembly.Spawn(world, rocket, Pose, Velocity, Orbit);
 
-    // Upright on the surface, moving with it; latitude and longitude in radians.
+    // Upright on the terrain, moving with it; latitude and longitude in radians.
     public static CraftPlacement OnSurface(CelestialSystem system, CelestialBody body, double latitude, double longitude, RocketPreset rocket, double universalTime, double clearance = 0.05) {
 
-        var site = CelestialSystem.BodyFixedPoint(body, latitude, longitude, clearance - rocket.Bottom);
+        var ground = body.GroundHeight(CelestialSystem.BodyFixedPoint(body, latitude, longitude, 0), 0.25);
+        var site = CelestialSystem.BodyFixedPoint(body, latitude, longitude, ground + clearance - rocket.Bottom);
         var state = system.BodyFixedToWorld(body.Index, site, universalTime);
         var frame = system.StateAt(body.Index, universalTime);
 

@@ -41,6 +41,21 @@ public sealed class EnvironmentSystem : ISystem {
 
     }
 
+    // Terrain detail only matters close to the ground, so far-off samples use a coarse resolution.
+    private static double SurfaceAltitude(CelestialBody body, double3 offset, double altitude, double universalTime) {
+
+        if (body.Terrain is not { } terrain) {
+
+            return altitude;
+
+        }
+
+        var resolution = Math.Max(1.0, (altitude - terrain.MaxHeight) * 0.01);
+        var bodyFixed = doubleQuat.Conjugate(body.RotationAt(universalTime)) * offset;
+        return altitude - body.GroundHeight(bodyFixed, resolution);
+
+    }
+
     public void Sample(ref FlightState flight, double3 position, double3 velocity, double universalTime) {
 
         var body = _system.DominantBodyAt(position, universalTime);
@@ -51,6 +66,7 @@ public sealed class EnvironmentSystem : ISystem {
 
         flight.Body = body.Index;
         flight.Altitude = distance - body.Radius;
+        flight.SurfaceAltitude = SurfaceAltitude(body, r, flight.Altitude, universalTime);
         flight.Gravity = -r * (body.GravitationalParameter / (distance * distance * distance)) + _system.FrameAcceleration(body.Index, universalTime);
         flight.Ambient = body.SampleAtmosphere(flight.Altitude);
 

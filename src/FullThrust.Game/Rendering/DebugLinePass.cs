@@ -60,6 +60,8 @@ public sealed class DebugLinePass : IRenderPass {
 
     public string Name => "Debug Lines";
 
+    public RenderStage Stage => RenderStage.Scene;
+
     public bool Enabled { get; set; } = true;
 
     public void Record(in FrameContext frame) {

@@ -14,6 +14,9 @@ public sealed class JoltRigidBodyWorld : IRigidBodyWorld {
 
     private const uint InvalidBody = 0xFFFFFFFF;
 
+    // Jolt rejects very small height fields.
+    private const int GroundGridPrime = 16;
+
     private struct Slot {
 
         public bool Alive;
@@ -43,6 +46,8 @@ public sealed class JoltRigidBodyWorld : IRigidBodyWorld {
     private readonly MassProperties _massProperties;
 
     private readonly ShapeSettings[] _scratch = new ShapeSettings[256];
+
+    private ShapeSettings[] _triangles = new ShapeSettings[2 * 63 * 63];
 
     private readonly Slot[] _slots;
     private readonly int[] _free;
@@ -100,9 +105,17 @@ public sealed class JoltRigidBodyWorld : IRigidBodyWorld {
         SetState(kinematic, GetState(kinematic));
         MoveKinematic(kinematic, new double3(0, -10, 0), doubleQuat.Identity, 0.02);
         AddForceAndTorque(dynamic, double3.UnitY, double3.UnitX);
+
+        Span<float> heights = stackalloc float[GroundGridPrime * GroundGridPrime];
+
+        var field = CreateKinematicHeightField(new HeightGrid(heights, GroundGridPrime, 1, double3.Zero), new double3(0, -20, 0), doubleQuat.Identity);
+
+        SetHeightField(field, new HeightGrid(heights, GroundGridPrime, 1, double3.Zero));
+        MoveKinematic(field, new double3(0, -20, 0), doubleQuat.Identity, 0.02);
         ShiftFrame(double3.UnitX, double3.UnitX);
         Step(0.02);
 
+        Destroy(field);
         Destroy(kinematic);
         Destroy(dynamic);
 
@@ -161,6 +174,34 @@ public sealed class JoltRigidBodyWorld : IRigidBodyWorld {
         var id = _bodies.CreateAndAddBody(settings, Activation.Activate);
 
         return Register(id, inner, double3.Zero);
+
+    }
+
+    public int CreateKinematicHeightField(in HeightGrid shape, double3 position, doubleQuat rotation) {
+
+        var inner = BuildHeightField(in shape);
+
+        using var settings = BodyCreationSettings.Create(inner, SpaceMath.ToFloat(position), SpaceMath.ToFloat(rotation), MotionType.Kinematic, GroundLayer);
+
+        settings.SetAllowSleeping(false);
+        settings.SetFriction(0.8f);
+
+        var id = _bodies.CreateAndAddBody(settings, Activation.Activate);
+
+        return Register(id, inner, double3.Zero);
+
+    }
+
+    public void SetHeightField(int body, in HeightGrid shape) {
+
+        ref var slot = ref Get(body);
+
+        var inner = BuildHeightField(in shape);
+
+        _bodies.SetShape(slot.Id, inner, false, Activation.DontActivate);
+
+        slot.Inner.Dispose();
+        slot.Inner = inner;
 
     }
 
@@ -266,6 +307,7 @@ public sealed class JoltRigidBodyWorld : IRigidBodyWorld {
             // GetPosition allocates in the current bindings; GetPositionAndRotation does not.
             _bodies.GetPositionAndRotation(slot.Id, out var position, out _);
             _bodies.SetPosition(slot.Id, position - dp, Activation.DontActivate);
+
             _bodies.SetLinearVelocity(slot.Id, _bodies.GetLinearVelocity(slot.Id) - dv);
 
         }
@@ -395,6 +437,67 @@ public sealed class JoltRigidBodyWorld : IRigidBodyWorld {
 
             _scratch[i].Dispose();
             _scratch[i] = default;
+
+        }
+
+        return result;
+
+    }
+
+    // Brutal's height-field and mesh bindings drop span arguments, so the grid becomes a compound of triangle shapes.
+    private Shape BuildHeightField(in HeightGrid grid) {
+
+        var n = grid.SampleCount;
+
+        if (n < 2 || grid.Heights.Length < n * n) {
+
+            throw new ArgumentException("A height grid needs SampleCount squared heights.", nameof(grid));
+
+        }
+
+        var count = (n - 1) * (n - 1) * 2;
+
+        if (_triangles.Length < count) {
+
+            _triangles = new ShapeSettings[count];
+
+        }
+
+        var origin = SpaceMath.ToFloat(grid.Origin);
+        var spacing = (float)grid.Spacing;
+        var t = 0;
+
+        for (var j = 0; j + 1 < n; j++) {
+
+            for (var i = 0; i + 1 < n; i++) {
+
+                var a = origin + new float3(i * spacing, grid.Heights[j * n + i], j * spacing);
+                var b = origin + new float3((i + 1) * spacing, grid.Heights[j * n + i + 1], j * spacing);
+                var c = origin + new float3(i * spacing, grid.Heights[(j + 1) * n + i], (j + 1) * spacing);
+                var d = origin + new float3((i + 1) * spacing, grid.Heights[(j + 1) * n + i + 1], (j + 1) * spacing);
+
+                // Counter-clockwise seen from above (+Y), so the faces point up.
+                _triangles[t++] = TriangleShapeSettings.Create(a, c, b, 0, default);
+                _triangles[t++] = TriangleShapeSettings.Create(b, c, d, 0, default);
+
+            }
+
+        }
+
+        using var compound = StaticCompoundShapeSettings.Create();
+
+        for (var i = 0; i < count; i++) {
+
+            compound.AddShape(float3.Zero, floatQuat.Identity, _triangles[i], 0);
+
+        }
+
+        var result = Checked(compound.CreateShape());
+
+        for (var i = 0; i < count; i++) {
+
+            _triangles[i].Dispose();
+            _triangles[i] = default;
 
         }
 

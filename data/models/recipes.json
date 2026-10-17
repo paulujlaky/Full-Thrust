@@ -1,0 +1,73 @@
+{
+  // Inputs for tools/FullThrust.ModelGen, which writes the .glb files below (relative to data/models).
+  // Regenerate with: dotnet run --project tools/FullThrust.ModelGen
+  // "part" takes length and diameter from data/parts/parts.json. Colours are linear albedo.
+  "models": [
+    { "output": "parts/pod-pinnacle.glb", "type": "crop", "source": "nasa/gemini.glb", "cropMinY": 5.95 },
+    {
+      "output": "parts/pod-concord.glb", "type": "pod", "part": "pod-concord",
+      "topDiameter": 1.7, "heatShieldDepth": 0.35, "noseHeight": 0.6, "windows": 4,
+      "paint": [0.86, 0.86, 0.85], "paintRoughness": 0.38, "seed": 3
+    },
+    {
+      "output": "parts/pod-odyssey.glb", "type": "pod", "part": "pod-odyssey",
+      "topDiameter": 1.0, "heatShieldDepth": 0.36, "dockingTunnel": true, "windows": 3,
+      "paint": [0.86, 0.86, 0.9], "paintMetallic": 1, "paintRoughness": 0.16, "seed": 4
+    },
+    { "output": "parts/rcs-quad.glb", "type": "rcs", "part": "rcs-quad", "paint": [0.78, 0.78, 0.76] },
+
+    { "output": "parts/decoupler-0.5.glb", "type": "ring", "part": "decoupler-0.5", "paint": [0.2, 0.2, 0.21], "paintMetallic": 0.7, "paintRoughness": 0.4 },
+    { "output": "parts/decoupler-1.9.glb", "type": "ring", "part": "decoupler-1.9", "paint": [0.14, 0.14, 0.15], "paintMetallic": 0.6, "paintRoughness": 0.45 },
+    { "output": "parts/decoupler-3.7.glb", "type": "ring", "part": "decoupler-3.7", "paint": [0.1, 0.1, 0.11], "paintMetallic": 0.3, "paintRoughness": 0.5 },
+    { "output": "parts/decoupler-adapter.glb", "type": "ring", "part": "decoupler-adapter", "paint": [0.82, 0.82, 0.8], "paintRoughness": 0.5 },
+    { "output": "parts/decoupler-6.6.glb", "type": "ring", "part": "decoupler-6.6", "pattern": "corrugated", "paint": [0.88, 0.88, 0.86], "paintRoughness": 0.5 },
+    { "output": "parts/decoupler-10.glb", "type": "ring", "part": "decoupler-10", "pattern": "corrugated", "paint": [0.88, 0.88, 0.86], "paintRoughness": 0.5 },
+
+    {
+      "output": "parts/tank-pinnacle.glb", "type": "tank", "part": "tank-pinnacle", "paint": [0.9, 0.9, 0.88], "seed": 5,
+      "bands": [ { "from": 0, "to": 0.45, "material": "metal" }, { "from": 11.4, "to": 12, "material": "accent" } ]
+    },
+    {
+      "output": "parts/tank-harrier-1.glb", "type": "tank", "part": "tank-harrier-1", "paint": [0.92, 0.92, 0.92], "seed": 6,
+      "bands": [ { "from": 0, "to": 1.4, "material": "accent" }, { "from": 37.3, "to": 38, "material": "accent" } ]
+    },
+    {
+      "output": "parts/tank-harrier-2.glb", "type": "tank", "part": "tank-harrier-2", "paint": [0.92, 0.92, 0.92], "seed": 7,
+      "bands": [ { "from": 0, "to": 0.5, "material": "metal" } ]
+    },
+    {
+      "output": "parts/tank-colossus-1.glb", "type": "tank", "part": "tank-colossus-1", "pattern": "roll", "paint": [0.92, 0.92, 0.9], "seed": 8,
+      "bands": [ { "from": 0, "to": 0.4, "material": "metal" }, { "from": 17, "to": 19.5, "material": "accent" } ]
+    },
+    {
+      "output": "parts/tank-colossus-2.glb", "type": "tank", "part": "tank-colossus-2", "paint": [0.92, 0.92, 0.9], "seed": 9,
+      "bands": [ { "from": 0, "to": 0.4, "material": "metal" } ]
+    },
+    {
+      "output": "parts/tank-colossus-3.glb", "type": "tank", "part": "tank-colossus-3", "paint": [0.92, 0.92, 0.9], "seed": 10,
+      "bands": [ { "from": 0, "to": 1.6, "material": "accent" } ]
+    },
+    {
+      "output": "parts/tank-service.glb", "type": "tank", "part": "tank-service", "pattern": "radiator", "raceway": false,
+      "paint": [0.8, 0.8, 0.82], "paintMetallic": 1, "paintRoughness": 0.28, "seed": 11
+    },
+
+    {
+      "output": "parts/engine-harrier-9.glb", "type": "cluster", "part": "engine-harrier-9",
+      "source": "nasa/ssme.glb", "sourceRotationDeg": [0, 0, 90],
+      "engineDiameter": 0.92, "engineLength": 2.5, "ringEngines": 8, "ringRadius": 1.25, "centerEngine": true
+    },
+    {
+      "output": "parts/engine-colossus-5.glb", "type": "cluster", "part": "engine-colossus-5",
+      "source": "nasa/ssme.glb", "sourceRotationDeg": [0, 0, 90],
+      "engineDiameter": 3.1, "engineLength": 5.2, "ringEngines": 4, "ringRadius": 3.2, "centerEngine": true
+    },
+    {
+      "output": "parts/engine-colossus-2.glb", "type": "cluster", "part": "engine-colossus-2",
+      "source": "nasa/ssme.glb", "sourceRotationDeg": [0, 0, 90],
+      "engineDiameter": 1.9, "engineLength": 2.9, "ringEngines": 4, "ringRadius": 2.6, "centerEngine": true
+    },
+
+    { "output": "scene/launchpad.glb", "type": "launchpad", "diameter": 120, "length": 3, "seed": 12 }
+  ]
+}

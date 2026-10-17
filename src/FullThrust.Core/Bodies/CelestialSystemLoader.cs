@@ -3,6 +3,7 @@ using Brutal.Numerics;
 using FullThrust.Core.Atmosphere;
 using FullThrust.Core.Orbits;
 using FullThrust.Core.Simulation;
+using FullThrust.Core.Terrain;
 
 namespace FullThrust.Core.Bodies;
 
@@ -44,7 +45,7 @@ public static class CelestialSystemLoader {
 
         }
 
-        return new CelestialSystem(data.Name, bodies, propagator);
+        return new CelestialSystem(data.Name, bodies, propagator, Sun.FromData(data.Sun));
 
     }
 
@@ -73,6 +74,8 @@ public static class CelestialSystemLoader {
                 InitialRotation = Radians(definition.InitialRotationDeg),
                 Atmosphere = definition.Atmosphere,
                 AtmosphereModel = CreateAtmosphere(definition, mu),
+                Terrain = CreateTerrain(definition),
+                TerrainData = definition.Terrain,
                 DebugColor = color,
 
             };
@@ -111,6 +114,8 @@ public static class CelestialSystemLoader {
             SphereOfInfluence = SphereOfInfluence.Radius(orbit.SemiMajorAxis, mass, parent.Mass),
             Atmosphere = definition.Atmosphere,
             AtmosphereModel = CreateAtmosphere(definition, mu),
+            Terrain = CreateTerrain(definition),
+            TerrainData = definition.Terrain,
             DebugColor = color,
 
         };
@@ -128,6 +133,8 @@ public static class CelestialSystemLoader {
         return new LayeredAtmosphere(atmosphere, mu / (definition.Radius * definition.Radius), definition.Radius);
 
     }
+
+    private static ProceduralTerrain? CreateTerrain(CelestialBodyData definition) => definition.Terrain is { } terrain ? new ProceduralTerrain(terrain, definition.Radius) : null;
 
     private static void Validate(CelestialBodyData definition, CelestialBody? parent) {
 

@@ -59,13 +59,21 @@ public static class CraftAssembly {
 
             world.Add(part, new Transform(pose.Position + pose.Rotation * spec.Position, pose.Rotation * spec.Rotation));
 
-            world.Add(part, new DebugShape {
+            if (definition.Model is { } model) {
 
-                Kind = definition.Shape,
-                Scale = new float3((float)(definition.Radius * 2), (float)definition.Length, (float)(definition.Radius * 2)),
-                Color = definition.Color,
+                world.Add(part, new ModelInstance { Model = model.Index });
 
-            });
+            } else {
+
+                world.Add(part, new DebugShape {
+
+                    Kind = definition.Shape,
+                    Scale = new float3((float)(definition.Radius * 2), (float)definition.Length, (float)(definition.Radius * 2)),
+                    Color = definition.Color,
+
+                });
+
+            }
 
             definition.Attach(world, part);
 

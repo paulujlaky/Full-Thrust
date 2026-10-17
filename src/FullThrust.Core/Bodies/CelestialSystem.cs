@@ -12,10 +12,11 @@ public sealed class CelestialSystem {
 
     private double _cachedTime = double.NaN;
 
-    public CelestialSystem(string name, CelestialBody[] bodies, IOrbitPropagator propagator) {
+    public CelestialSystem(string name, CelestialBody[] bodies, IOrbitPropagator propagator, Sun? sun = null) {
 
         Name = name;
         Propagator = propagator;
+        Sun = sun ?? new Sun();
 
         _bodies = bodies;
         _positions = new double3[bodies.Length];
@@ -30,6 +31,8 @@ public sealed class CelestialSystem {
     public string Name { get; }
 
     public IOrbitPropagator Propagator { get; }
+
+    public Sun Sun { get; }
 
     public CelestialBody Root { get; }
 
@@ -180,6 +183,23 @@ public sealed class CelestialSystem {
         var offset = celestial.RotationAt(universalTime) * bodyFixed;
 
         return new StateVector(frame.Position + offset, frame.Velocity + double3.Cross(celestial.AngularVelocity, offset));
+
+    }
+
+    public double3 WorldToBodyFixed(int body, double3 world, double universalTime) {
+
+        var offset = world - StateAt(body, universalTime).Position;
+
+        return doubleQuat.Conjugate(_bodies[body].RotationAt(universalTime)) * offset;
+
+    }
+
+    // Height above the terrain (or reference radius without terrain) for a world position.
+    public double SurfaceAltitude(int body, double3 world, double universalTime, double resolution = 1.0) {
+
+        var celestial = _bodies[body];
+        var bodyFixed = WorldToBodyFixed(body, world, universalTime);
+        return bodyFixed.Length() - _bodies[body].Radius - _bodies[body].GroundHeight(bodyFixed, resolution);
 
     }
 

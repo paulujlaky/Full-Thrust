@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Gltf" />
+    <PackageReference Include="Ahwoo.Brutal.Numerics" />
+  </ItemGroup>
+
+</Project>

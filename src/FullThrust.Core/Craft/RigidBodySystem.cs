@@ -149,7 +149,7 @@ public sealed class RigidBodySystem : ISystem {
         orbit.Rebase(body.Index, relative, now);
 
         var up = double3.Normalize(relative.Position);
-        var clearance = relative.Position.Length() - body.Radius + double3.Dot(transform.Rotation * new double3(0, bottom, 0), up);
+        var clearance = _system.SurfaceAltitude(body.Index, transform.Position, now) + double3.Dot(transform.Rotation * new double3(0, bottom, 0), up);
         var surfaceVelocity = relative.Velocity - double3.Cross(body.AngularVelocity, relative.Position);
 
         flight.Landed = clearance < 0.5 && surfaceVelocity.LengthSquared() < 1.0;

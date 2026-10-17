@@ -14,7 +14,7 @@ public sealed class DebugShapePass : IRenderPass {
     [StructLayout(LayoutKind.Sequential)]
     private struct PushData {
 
-        public float4x4 Mvp;
+        public float4x4 Model;
 
         public float4 Normal0;
         public float4 Normal1;
@@ -36,7 +36,7 @@ public sealed class DebugShapePass : IRenderPass {
 
     private readonly GpuMesh[] _meshes;
 
-    public DebugShapePass(DeviceEx device, VkRenderPass renderPass, ShaderLibrary shaders, World world, FloatingOrigin origin) {
+    public unsafe DebugShapePass(DeviceEx device, VkRenderPass renderPass, VkDescriptorSetLayout frameLayout, ShaderLibrary shaders, World world, FloatingOrigin origin) {
 
         _device = device;
         _world = world;
@@ -49,43 +49,40 @@ public sealed class DebugShapePass : IRenderPass {
         _meshes[(int)ShapeKind.Cone] = new GpuMesh(device, "DebugCone", MeshData.UnitFrustum(0, 32));
         _meshes[(int)ShapeKind.Frustum] = new GpuMesh(device, "DebugFrustum", MeshData.UnitFrustum(0.22f, 32));
 
-        _layout = device.CreatePipelineLayout([], [
+        _layout = device.CreatePipelineLayout([frameLayout], [
 
             new VkPushConstantRange { StageFlags = PushStages, Offset = ByteSize.Zero, Size = ByteSize.Of<PushData>() },
 
         ], null);
 
-        var vertexShader = shaders.Load("debug_shape.vert");
-        var fragmentShader = shaders.Load("debug_shape.frag");
+        _pipeline = Pipelines.Create(device, shaders, new PipelineDesc {
 
-        try {
+            RenderPass = renderPass,
+            Layout = _layout,
+            VertexShader = "debug_shape.vert",
+            FragmentShader = "debug_shape.frag",
+            VertexInput = VertexInput.For<Vertex>(),
+            Cull = VkCullModeFlags.None,
+            Depth = DepthMode.TestWrite,
 
-            _pipeline = CreatePipeline(renderPass, vertexShader, fragmentShader);
-
-        } finally {
-
-            device.DestroyShaderModule(vertexShader, null);
-            device.DestroyShaderModule(fragmentShader, null);
-
-        }
+        });
 
     }
 
     public string Name => "Debug Shapes";
 
-    public bool Enabled { get; set; } = true;
+    public RenderStage Stage => RenderStage.Scene;
 
-    public float3 SunDirection { get; set; } = float3.Normalize(new float3(0.6f, 0.7f, 0.35f));
+    public bool Enabled { get; set; } = true;
 
     public int DrawCount { get; private set; }
 
     public void Record(in FrameContext frame) {
 
         var cmd = frame.CommandBuffer;
-        var viewProjection = frame.View * frame.Projection;
-        var sun = SunDirection;
 
         cmd.BindPipeline(VkPipelineBindPoint.Graphics, _pipeline);
+        cmd.BindDescriptorSet(VkPipelineBindPoint.Graphics, _layout, 0, frame.FrameSet, []);
 
         var bound = -1;
         var draws = 0;
@@ -105,15 +102,14 @@ public sealed class DebugShapePass : IRenderPass {
             }
 
             var rotation = float4x4.CreateFromQuaternion(SpaceMath.ToFloat(transform.Rotation));
-            var model = float4x4.CreateScale(shape.Scale) * rotation * float4x4.CreateTranslation(_origin.ToLocal(transform.Position));
 
             var push = new PushData {
 
-                Mvp = model * viewProjection,
+                Model = float4x4.CreateScale(shape.Scale) * rotation * float4x4.CreateTranslation(_origin.ToLocal(transform.Position)),
 
-                Normal0 = new float4(rotation.X.X, rotation.X.Y, rotation.X.Z, sun.X),
-                Normal1 = new float4(rotation.Y.X, rotation.Y.Y, rotation.Y.Z, sun.Y),
-                Normal2 = new float4(rotation.Z.X, rotation.Z.Y, rotation.Z.Z, sun.Z),
+                Normal0 = new float4(rotation.X.X, rotation.X.Y, rotation.X.Z, 0),
+                Normal1 = new float4(rotation.Y.X, rotation.Y.Y, rotation.Y.Z, 0),
+                Normal2 = new float4(rotation.Z.X, rotation.Z.Y, rotation.Z.Z, 0),
 
                 Color = shape.Color,
 
@@ -127,52 +123,6 @@ public sealed class DebugShapePass : IRenderPass {
         }
 
         DrawCount = draws;
-
-    }
-
-    private unsafe VkPipeline CreatePipeline(VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader) {
-
-        var stages = stackalloc VkPipelineShaderStageCreateInfo[2];
-
-        stages[0] = Presets.ShaderStage.Vertex(vertexShader);
-        stages[1] = Presets.ShaderStage.Fragment(fragmentShader);
-
-        var vertexInput = VertexInput.For<Vertex>();
-
-        var viewport = new VkPipelineViewportStateCreateInfo { ViewportCount = 1, ScissorCount = 1 };
-
-        var dynamicStates = stackalloc VkDynamicState[2];
-
-        dynamicStates[0] = VkDynamicState.Viewport;
-        dynamicStates[1] = VkDynamicState.Scissor;
-
-        var dynamic = new VkPipelineDynamicStateCreateInfo { DynamicStateCount = 2, DynamicStates = dynamicStates };
-
-        var depth = new VkPipelineDepthStencilStateCreateInfo {
-
-            DepthTestEnable = true,
-            DepthWriteEnable = true,
-            DepthCompareOp = VkCompareOp.GreaterOrEqual,
-
-        };
-
-        return _device.CreateGraphicsPipeline(default, new VkGraphicsPipelineCreateInfo {
-
-            StageCount = 2,
-            Stages = stages,
-            VertexInputState = vertexInput,
-            InputAssemblyState = Presets.InputAssembly.TriangleList,
-            ViewportState = &viewport,
-            RasterizationState = Presets.Rasterization.Fill.CullNone,
-            MultisampleState = Presets.Multisample.None,
-            DepthStencilState = &depth,
-            ColorBlendState = Presets.BlendState.BlendNone,
-            DynamicState = &dynamic,
-            Layout = _layout,
-            RenderPass = renderPass,
-            Subpass = 0,
-
-        }, null);
 
     }
 

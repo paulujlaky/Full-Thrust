@@ -64,6 +64,8 @@ internal sealed class FlightHarness : IDisposable {
 
     public CelestialBody Earth => System.Root;
 
+    public CelestialBody Moon => System.Find("Moon")!;
+
     public RocketPreset Rocket(string id) => Rockets.Find(id) ?? throw new ArgumentException(id);
 
     public Entity SpawnOnPad(string rocket) {
@@ -71,6 +73,16 @@ internal sealed class FlightHarness : IDisposable {
         var preset = Rocket(rocket);
 
         Focus.Craft = CraftPlacement.OnSurface(System, Earth, LaunchLatitude, 0, preset, Clock.UniversalTime).Spawn(World, preset);
+
+        return Focus.Craft;
+
+    }
+
+    public Entity SpawnOnSurface(string rocket, CelestialBody body, double latitude, double longitude) {
+
+        var preset = Rocket(rocket);
+
+        Focus.Craft = CraftPlacement.OnSurface(System, body, latitude, longitude, preset, Clock.UniversalTime).Spawn(World, preset);
 
         return Focus.Craft;
 

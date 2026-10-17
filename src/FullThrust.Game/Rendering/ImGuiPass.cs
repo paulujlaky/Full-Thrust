@@ -15,6 +15,8 @@ public sealed class ImGuiPass : IRenderPass {
 
     public string Name => "ImGui";
 
+    public RenderStage Stage => RenderStage.Overlay;
+
     public bool Enabled { get; set; } = true;
 
     public void Record(in FrameContext frame) {

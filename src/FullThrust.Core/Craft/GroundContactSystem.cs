@@ -2,7 +2,6 @@ using Brutal.Numerics;
 using FullThrust.Core.Bodies;
 using FullThrust.Core.Ecs;
 using FullThrust.Core.Physics;
-using FullThrust.Core.Rendering;
 using FullThrust.Core.Simulation;
 using FullThrust.Core.Space;
 
@@ -12,7 +11,7 @@ public struct GroundPatch {
 
     public int Body;
 
-    // Box centre and orientation in the body-fixed frame, so the patch turns with the planet.
+    // Grid centre on the reference sphere and its orientation in the body-fixed frame, so the patch turns with the planet.
     public double3 Anchor;
     public doubleQuat Orientation;
 
@@ -20,15 +19,17 @@ public struct GroundPatch {
 
 }
 
-// Until terrain exists, a kinematic slab turning with the planet stands in for the ground under the focus craft.
+// A height-field patch of the terrain under the focus craft, rebuilt whenever the craft wanders away from its centre.
 public sealed class GroundContactSystem : ISystem {
+
+    public const int SampleCount = 40;
 
     private readonly CelestialSystem _system;
     private readonly IRigidBodyWorld _bodies;
     private readonly PhysicsFrame _frame;
     private readonly FlightFocus _focus;
 
-    private readonly ShapeElement[] _shape = new ShapeElement[1];
+    private readonly float[] _heights = new float[SampleCount * SampleCount];
 
     public GroundContactSystem(CelestialSystem system, IRigidBodyWorld bodies, PhysicsFrame frame, FlightFocus focus) {
 
@@ -39,18 +40,25 @@ public sealed class GroundContactSystem : ISystem {
 
     }
 
-    public double3 HalfExtents { get; set; } = new(1000, 10, 1000);
+    // Metres between height samples; the patch spans (SampleCount - 1) * Spacing.
+    public double Spacing { get; set; } = 6;
 
     public double ActivationAltitude { get; set; } = 3000;
 
-    public double ReanchorDistance { get; set; } = 400;
+    public double ReanchorDistance { get; set; } = 50;
 
     public Entity Ground { get; private set; }
+
+    public long Rebuilds { get; private set; }
+
+    public double LastRebuildMilliseconds { get; private set; }
+
+    public double PatchSize => (SampleCount - 1) * Spacing;
 
     public void Update(World world, in SimTime time) {
 
         var focus = _focus.Craft;
-        var active = world.IsAlive(focus) && world.Has<PhysicsBody>(focus) && world.Get<FlightState>(focus).Altitude < ActivationAltitude;
+        var active = world.IsAlive(focus) && world.Has<PhysicsBody>(focus) && world.Get<FlightState>(focus).SurfaceAltitude < ActivationAltitude;
 
         if (!active) {
 
@@ -60,29 +68,39 @@ public sealed class GroundContactSystem : ISystem {
 
         }
 
-        var start = time.UniversalTime - time.DeltaTime;
+        var startTime = time.UniversalTime - time.DeltaTime;
         var flight = world.Get<FlightState>(focus);
         var position = world.Get<Transform>(focus).Position;
 
         if (!world.IsAlive(Ground)) {
 
-            Create(world, flight.Body, position, start);
+            Create(world, flight.Body, position, startTime);
 
         }
 
         ref var patch = ref world.Get<GroundPatch>(Ground);
 
-        var bodyFixed = ToBodyFixed(patch.Body, position, start);
+        var bodyFixed = _system.WorldToBodyFixed(patch.Body, position, startTime);
         var horizontal = bodyFixed - patch.Anchor * (double3.Dot(bodyFixed, patch.Anchor) / patch.Anchor.LengthSquared());
 
         if (patch.Body != flight.Body || horizontal.LengthSquared() > ReanchorDistance * ReanchorDistance) {
 
-            Anchor(ref patch, flight.Body, position, start);
-            Teleport(in patch, start);
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+
+            Anchor(ref patch, flight.Body, position, startTime);
+            BuildHeights(in patch);
+
+            _bodies.SetHeightField(patch.Handle, Grid());
+
+            LastRebuildMilliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+            var start = Pose(in patch, startTime);
+
+            _bodies.SetState(patch.Handle, new RigidBodyState { Position = _frame.ToLocalPosition(start.Position), Rotation = start.Rotation });
 
         }
 
-        // Kinematic targets are for the end of the step; the frame will have coasted by then.
+        // The patch is placed where it will be at the end of the step, in the frame as it will have coasted by then.
         var end = time.UniversalTime;
         var pose = Pose(in patch, end);
         var frameOrigin = _frame.Origin + _frame.Velocity * time.DeltaTime;
@@ -93,25 +111,46 @@ public sealed class GroundContactSystem : ISystem {
 
     }
 
+    // Height of the patch surface above the anchor plane at a body-fixed position, for tests and debugging.
+    public double PatchHeightAt(in GroundPatch patch, double3 bodyFixed) {
+
+        var local = doubleQuat.Conjugate(patch.Orientation) * (bodyFixed - patch.Anchor);
+        var half = PatchSize / 2;
+        var x = Math.Clamp((local.X + half) / Spacing, 0, SampleCount - 1.001);
+        var z = Math.Clamp((local.Z + half) / Spacing, 0, SampleCount - 1.001);
+
+        var i = (int)x;
+        var j = (int)z;
+        var fx = x - i;
+        var fz = z - j;
+
+        var h00 = _heights[j * SampleCount + i];
+        var h10 = _heights[j * SampleCount + i + 1];
+        var h01 = _heights[(j + 1) * SampleCount + i];
+        var h11 = _heights[(j + 1) * SampleCount + i + 1];
+
+        return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
+
+    }
+
+    private HeightGrid Grid() => new(_heights, SampleCount, Spacing, new double3(-PatchSize / 2, 0, -PatchSize / 2));
+
     private void Create(World world, int body, double3 position, double universalTime) {
 
         var patch = new GroundPatch();
 
         Anchor(ref patch, body, position, universalTime);
+        BuildHeights(in patch);
 
         var pose = Pose(in patch, universalTime);
 
-        _shape[0] = new ShapeElement(ShapePrimitive.Box, double3.Zero, doubleQuat.Identity, HalfExtents);
-        patch.Handle = _bodies.CreateKinematic(_shape, _frame.ToLocalPosition(pose.Position), pose.Rotation);
-
-        var extents = HalfExtents * 2;
+        patch.Handle = _bodies.CreateKinematicHeightField(Grid(), _frame.ToLocalPosition(pose.Position), pose.Rotation);
 
         Ground = world.Create();
 
         world.Add(Ground, new Name("Ground"));
         world.Add(Ground, patch);
         world.Add(Ground, pose);
-        world.Add(Ground, new DebugShape { Kind = ShapeKind.Box, Scale = new float3((float)extents.X, (float)extents.Y, (float)extents.Z), Color = new float4(0.32f, 0.36f, 0.30f, 1) });
 
     }
 
@@ -133,19 +172,37 @@ public sealed class GroundContactSystem : ISystem {
     private void Anchor(ref GroundPatch patch, int body, double3 position, double universalTime) {
 
         var celestial = _system[body];
-        var up = double3.Normalize(ToBodyFixed(body, position, universalTime));
+        var up = double3.Normalize(_system.WorldToBodyFixed(body, position, universalTime));
 
         patch.Body = body;
-        patch.Anchor = up * (celestial.Radius - HalfExtents.Y);
+        patch.Anchor = up * celestial.Radius;
         patch.Orientation = SpaceMath.FromTo(double3.UnitY, up);
 
     }
 
-    private void Teleport(in GroundPatch patch, double universalTime) {
+    // Samples the ground under each grid point, measured along the anchor's up so curvature is baked in.
+    private void BuildHeights(in GroundPatch patch) {
 
-        var pose = Pose(in patch, universalTime);
+        var body = _system[patch.Body];
+        var up = patch.Orientation * double3.UnitY;
+        var half = PatchSize / 2;
+        var resolution = Spacing * 0.5;
 
-        _bodies.SetState(patch.Handle, new RigidBodyState { Position = _frame.ToLocalPosition(pose.Position), Rotation = pose.Rotation });
+        for (var j = 0; j < SampleCount; j++) {
+
+            for (var i = 0; i < SampleCount; i++) {
+
+                var local = new double3(i * Spacing - half, 0, j * Spacing - half);
+                var direction = double3.Normalize(patch.Anchor + patch.Orientation * local);
+                var surface = direction * (body.Radius + body.GroundHeight(direction, resolution));
+
+                _heights[j * SampleCount + i] = (float)double3.Dot(surface - patch.Anchor, up);
+
+            }
+
+        }
+
+        Rebuilds++;
 
     }
 
@@ -155,15 +212,6 @@ public sealed class GroundContactSystem : ISystem {
         var world = _system.BodyFixedToWorld(patch.Body, patch.Anchor, universalTime);
 
         return new Transform(world.Position, doubleQuat.Normalize(body.RotationAt(universalTime) * patch.Orientation));
-
-    }
-
-    private double3 ToBodyFixed(int body, double3 position, double universalTime) {
-
-        var celestial = _system[body];
-        var offset = position - _system.StateAt(body, universalTime).Position;
-
-        return doubleQuat.Conjugate(celestial.RotationAt(universalTime)) * offset;
 
     }
 

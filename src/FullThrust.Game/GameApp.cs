@@ -9,6 +9,7 @@ using FullThrust.Core.Ecs;
 using FullThrust.Core.Orbits;
 using FullThrust.Core.Parts;
 using FullThrust.Core.Physics;
+using FullThrust.Core.Rendering;
 using FullThrust.Core.Simulation;
 using FullThrust.Core.Space;
 using FullThrust.Game.Controls;
@@ -16,6 +17,7 @@ using FullThrust.Game.Debug;
 using FullThrust.Game.Platform;
 using FullThrust.Game.Rendering;
 using FullThrust.Game.Scene;
+using FullThrust.Game.Terrain;
 using FullThrust.Physics.Jolt;
 
 namespace FullThrust.Game;
@@ -36,6 +38,8 @@ public sealed class GameOptions {
 
     public string RocketsFile = Path.Combine("data", "rockets", "rockets.json");
 
+    public string ModelsDirectory = Path.Combine("data", "models");
+
     public Scenario Scenario = Scenario.Launchpad;
 
     public string? Rocket;
@@ -45,6 +49,12 @@ public sealed class GameOptions {
     public double CameraDistance;
 
     public double CameraPitch = double.NaN;
+
+    public double CameraYaw = double.NaN;
+
+    public bool Headlight;
+
+    public bool ShowTerrainLevels;
 
     public double TimeScale = 1;
 
@@ -88,7 +98,12 @@ public sealed class GameApp : IDisposable {
 
     private readonly VulkanContext _vulkan;
     private readonly Renderer _renderer;
+    private readonly SceneLighting _lighting = new();
     private readonly DebugUi _debugUi;
+    private readonly GpuUploader _uploader;
+    private ModelLibrary? _modelLibrary;
+    private TerrainRenderer? _terrain;
+    private MeshPass? _meshPass;
 
     private readonly World _world = new();
     private readonly SystemScheduler _systems = new();
@@ -100,6 +115,7 @@ public sealed class GameApp : IDisposable {
     private readonly OrbitEvents _orbitEvents = new();
     private readonly TrajectoryPredictor _predictor;
 
+    private readonly ModelCatalog _models = new();
     private readonly PartCatalog _parts;
     private readonly RocketCatalog _rockets;
 
@@ -135,7 +151,7 @@ public sealed class GameApp : IDisposable {
         _bodies = CelestialSystemLoader.LoadFile(Path.Combine(root, options.SystemFile), new KeplerPropagator());
         _predictor = new TrajectoryPredictor(_bodies, new PatchedConicSolver(_bodies));
 
-        _parts = PartCatalogLoader.LoadFile(Path.Combine(root, options.PartsFile));
+        _parts = PartCatalogLoader.LoadFile(Path.Combine(root, options.PartsFile), _models);
         _rockets = RocketCatalogLoader.LoadFile(Path.Combine(root, options.RocketsFile), _parts);
 
         var rocket = options.Rocket is null ? _rockets.Rockets[0] : _rockets.Find(options.Rocket) ?? throw new ArgumentException($"Unknown rocket '{options.Rocket}'.");
@@ -156,10 +172,12 @@ public sealed class GameApp : IDisposable {
         _input = new InputState(_window);
 
         _vulkan = new VulkanContext(_window, options.Validation);
-        _renderer = new Renderer(_vulkan, _window.FramebufferSize, options.VSync);
+        _lighting.Headlight = options.Headlight;
+        _renderer = new Renderer(_vulkan, _window.FramebufferSize, options.VSync, _lighting);
         _debugUi = new DebugUi(_window, _vulkan, _renderer.Swapchain) { Visible = options.Overlay };
+        _uploader = new GpuUploader(_vulkan);
 
-        _scene = new DemoScene(_bodies, _rockets, _focus);
+        _scene = new DemoScene(_bodies, _rockets, _focus, _models);
         _scene.Populate(_world, options.Scenario, rocket, _clock.UniversalTime);
 
         _camera = new CameraController(_input, new Camera(), _scene);
@@ -174,6 +192,7 @@ public sealed class GameApp : IDisposable {
 
         _flight.AddFixedSystems(_systems)
             .Add(SystemPhase.LateUpdate, new CelestialBodySystem(_bodies))
+            .Add(SystemPhase.LateUpdate, new SurfaceAnchorSystem(_bodies))
             .Add(SystemPhase.LateUpdate, new OrbitPropagationSystem(_bodies, new PatchedConicSolver(_bodies), _orbitEvents))
             .Add(SystemPhase.LateUpdate, _flight.PartTransforms);
 
@@ -185,11 +204,12 @@ public sealed class GameApp : IDisposable {
 
         _debugUi.AddPanel(new FrameTimingPanel(_stats, _profile, _renderer, _vulkan));
         _debugUi.AddPanel(new SimulationPanel(_world, _clock, _origin, _stats, _scene, shapes));
-        _debugUi.AddPanel(new TweaksPanel(_clock, _origin, _renderer, shapes, _camera, _flightInput));
+        _debugUi.AddPanel(new TweaksPanel(_clock, _origin, _renderer, _camera, _flightInput));
         _debugUi.AddPanel(new OrbitPanel(_world, _bodies, _clock, _scene, _predictor, _orbitEvents));
         _debugUi.AddPanel(new TimeWarpPanel(_warp, _clock));
         _debugUi.AddPanel(new ScenarioPanel(ResetScenario, _scene, _orbitDraw, _craftDraw, _camera, CaptureNow));
         _debugUi.AddPanel(new CraftPanel(_world, _focus, _bodies, _parts, _physicsFrame, _physics, _flight));
+        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting));
         _debugUi.AddPanel(new ControlsPanel());
 
         _origin.ShiftTo(_world.Get<Transform>(_scene.Craft).Position);
@@ -227,6 +247,12 @@ public sealed class GameApp : IDisposable {
 
         }
 
+        if (!double.IsNaN(_options.CameraYaw)) {
+
+            _camera.Rig.Yaw = _options.CameraYaw * Math.PI / 180;
+
+        }
+
     }
 
     private static double CraftDistance(RocketPreset rocket) => Math.Max(25, rocket.Height * 1.6);
@@ -237,10 +263,20 @@ public sealed class GameApp : IDisposable {
 
         using var shaders = new ShaderLibrary(_vulkan.Device, shaderRoot);
 
-        var shapes = new DebugShapePass(_vulkan.Device, _renderer.Swapchain.RenderPass, shaders, _world, _origin);
+        var shapes = new DebugShapePass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.Frames.SetLayout, shaders, _world, _origin);
 
+        _modelLibrary = new ModelLibrary(_vulkan, _uploader, _models, Path.Combine(AppContext.BaseDirectory, _options.ModelsDirectory));
+
+        _terrain = new TerrainRenderer(_vulkan.Device, _uploader, _renderer.SceneRenderPass, _renderer.Frames.SetLayout, shaders, _bodies, _origin);
+
+        _terrain.ShowLevels = _options.ShowTerrainLevels;
+        _renderer.AddPass(_terrain);
+        _meshPass = new MeshPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.Frames.SetLayout, shaders, _world, _origin, _modelLibrary);
+
+        _renderer.AddPass(_meshPass);
         _renderer.AddPass(shapes);
-        _renderer.AddPass(new DebugLinePass(_vulkan.Device, _renderer.Swapchain.RenderPass, shaders, _lines));
+        _renderer.AddPass(new DebugLinePass(_vulkan.Device, _renderer.SceneRenderPass, shaders, _lines));
+        _renderer.AddPass(new TonemapPass(_vulkan.Device, _renderer.Swapchain.RenderPass, shaders, _renderer.Hdr, _lighting));
         _renderer.AddPass(new ImGuiPass(_debugUi.Renderer));
 
         return shapes;
@@ -527,6 +563,9 @@ public sealed class GameApp : IDisposable {
         var size = _window.FramebufferSize;
         var aspect = size.Y > 0 ? (float)size.X / size.Y : 1.0f;
 
+        _lighting.Update(_bodies, _clock.UniversalTime, _camera.Camera.Position, _camera.Camera.Forward, _camera.Camera.Up);
+        _renderer.Seconds = _clock.UniversalTime;
+        _terrain?.Prepare(_camera.Camera.Position, _clock.UniversalTime);
         _renderer.Render(size, _camera.Camera.ViewMatrix(_origin), _camera.Camera.ProjectionMatrix(aspect));
         _debugUi.EndFrame();
 
@@ -606,6 +645,7 @@ public sealed class GameApp : IDisposable {
 
         }
 
+        Log.Info($"Smoke: ground patch rebuilds {_flight.Ground.Rebuilds}, last {_flight.Ground.LastRebuildMilliseconds:F1} ms, terrain chunks built {_terrain?.ChunksBuilt}");
         Log.Info($"Smoke: rigid bodies {_physics.BodyCount}, physics steps {_flight.RigidBodies.Steps}, frame shifts {_physicsFrame.ShiftCount}, stages fired {_flight.Staging.StageCount}, craft removed {_flight.Modes.CraftDestroyed}, SOI transitions {_orbitEvents.TransitionCount}");
 
         for (var i = _orbitEvents.RecentCount - 1; i >= 0; i--) {
@@ -654,6 +694,8 @@ public sealed class GameApp : IDisposable {
         _physics.Dispose();
 
         _renderer.Dispose();
+        _modelLibrary?.Dispose();
+        _uploader.Dispose();
         _debugUi.Dispose();
         _vulkan.Dispose();
 

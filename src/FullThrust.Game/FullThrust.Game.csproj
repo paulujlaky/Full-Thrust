@@ -23,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\FullThrust.Assets\FullThrust.Assets.csproj" />
     <ProjectReference Include="..\FullThrust.Core\FullThrust.Core.csproj" />
     <ProjectReference Include="..\FullThrust.Physics.Jolt\FullThrust.Physics.Jolt.csproj" />
   </ItemGroup>

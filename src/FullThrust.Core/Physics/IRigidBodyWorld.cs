@@ -36,6 +36,28 @@ public readonly struct ShapeElement {
 
 }
 
+// A square grid of heights in body space: sample (i, j) sits at Origin + (i * Spacing, height, j * Spacing), row-major in j.
+public readonly ref struct HeightGrid {
+
+    public readonly ReadOnlySpan<float> Heights;
+
+    public readonly int SampleCount;
+
+    public readonly double Spacing;
+
+    public readonly double3 Origin;
+
+    public HeightGrid(ReadOnlySpan<float> heights, int sampleCount, double spacing, double3 origin) {
+
+        Heights = heights;
+        SampleCount = sampleCount;
+        Spacing = spacing;
+        Origin = origin;
+
+    }
+
+}
+
 public struct MassDistribution {
 
     public double Mass;
@@ -70,6 +92,11 @@ public interface IRigidBodyWorld : IDisposable {
     int CreateDynamic(ReadOnlySpan<ShapeElement> shape, in MassDistribution mass, in RigidBodyState state);
 
     int CreateKinematic(ReadOnlySpan<ShapeElement> shape, double3 position, doubleQuat rotation);
+
+    // Kinematic terrain, moved with MoveKinematic so contacts see the surface velocity as the planet turns.
+    int CreateKinematicHeightField(in HeightGrid shape, double3 position, doubleQuat rotation);
+
+    void SetHeightField(int body, in HeightGrid shape);
 
     void Destroy(int body);
 

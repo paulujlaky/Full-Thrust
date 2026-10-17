@@ -1,3 +1,5 @@
+using FullThrust.Core.Terrain;
+
 namespace FullThrust.Core.Bodies;
 
 // Serialized definitions. SI units throughout; angles in degrees for readability.
@@ -5,6 +7,8 @@ namespace FullThrust.Core.Bodies;
 public sealed class CelestialSystemData {
 
     public string Name { get; set; } = "";
+
+    public SunData? Sun { get; set; }
 
     public List<CelestialBodyData> Bodies { get; set; } = [];
 
@@ -31,6 +35,8 @@ public sealed class CelestialBodyData {
     public OrbitData? Orbit { get; set; }
 
     public AtmosphereData? Atmosphere { get; set; }
+
+    public TerrainData? Terrain { get; set; }
 
     public double[] DebugColor { get; set; } = [0.6, 0.6, 0.6];
 

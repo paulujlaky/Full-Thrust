@@ -10,21 +10,21 @@ namespace FullThrust.Game.Debug;
 
 public sealed class TweaksPanel : IDebugPanel {
 
+    private static readonly string[] TonemapperNames = ["ACES", "AgX", "PBR Neutral", "Reinhard", "Clamp"];
+
     private readonly SimulationClock _clock;
     private readonly FloatingOrigin _origin;
 
     private readonly Renderer _renderer;
-    private readonly DebugShapePass _shapes;
 
     private readonly CameraController _camera;
     private readonly FlightInputSystem _flight;
 
-    public TweaksPanel(SimulationClock clock, FloatingOrigin origin, Renderer renderer, DebugShapePass shapes, CameraController camera, FlightInputSystem flight) {
+    public TweaksPanel(SimulationClock clock, FloatingOrigin origin, Renderer renderer, CameraController camera, FlightInputSystem flight) {
 
         _clock = clock;
         _origin = origin;
         _renderer = renderer;
-        _shapes = shapes;
         _camera = camera;
         _flight = flight;
 
@@ -185,19 +185,81 @@ public sealed class TweaksPanel : IDebugPanel {
 
         }
 
-        var sun = _shapes.SunDirection;
+        DrawLighting();
 
-        if (ImGui.SliderFloat3("Sun direction"u8, ref sun, -1, 1)) {
+    }
 
-            _shapes.SunDirection = float3.NormalizeOrZero(sun) == float3.Zero ? _shapes.SunDirection : float3.Normalize(sun);
+    private void DrawLighting() {
+
+        var lighting = _renderer.Lighting;
+
+        ImGui.SeparatorText("Lighting"u8);
+
+        var ev = lighting.Ev100;
+
+        if (ImGui.SliderFloat("Exposure EV100"u8, ref ev, 6f, 18f, "%.1f"u8)) {
+
+            lighting.Ev100 = ev;
 
         }
 
-        var clear = _renderer.ClearColor.XYZ;
+        for (var i = 0; i < TonemapperNames.Length; i++) {
 
-        if (ImGui.ColorEdit3("Clear color"u8, ref clear)) {
+            if (ImGui.RadioButton(TonemapperNames[i], (int)lighting.Tonemapper == i)) {
 
-            _renderer.ClearColor = new float4(clear, 1);
+                lighting.Tonemapper = (Tonemapper)i;
+
+            }
+
+            if (i + 1 < TonemapperNames.Length) {
+
+                ImGui.SameLine();
+
+            }
+
+        }
+
+        var ambient = lighting.AmbientScale;
+
+        if (ImGui.SliderFloat("Ambient scale"u8, ref ambient, 0f, 4f, "%.2f"u8)) {
+
+            lighting.AmbientScale = ambient;
+
+        }
+
+        var floor = lighting.MinimumAmbientLux;
+
+        if (ImGui.SliderFloat("Ambient floor"u8, ref floor, 0f, 2000f, "%.0f lx"u8, ImGuiSliderFlags.Logarithmic)) {
+
+            lighting.MinimumAmbientLux = floor;
+
+        }
+
+        var headlight = lighting.Headlight;
+
+        if (ImGui.Checkbox("Headlight sun"u8, ref headlight)) {
+
+            lighting.Headlight = headlight;
+
+        }
+
+        var overrideSun = lighting.OverrideSun;
+
+        if (ImGui.Checkbox("Override sun"u8, ref overrideSun)) {
+
+            lighting.OverrideSun = overrideSun;
+
+        }
+
+        if (lighting.OverrideSun) {
+
+            var sun = lighting.SunOverride;
+
+            if (ImGui.SliderFloat3("Sun direction"u8, ref sun, -1, 1) && float3.NormalizeOrZero(sun) != float3.Zero) {
+
+                lighting.SunOverride = float3.Normalize(sun);
+
+            }
 
         }
 

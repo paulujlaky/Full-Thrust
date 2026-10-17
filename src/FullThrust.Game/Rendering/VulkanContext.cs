@@ -29,6 +29,9 @@ public sealed class VulkanContext : IDisposable {
 
     public bool ValidationEnabled { get; }
 
+    // 1 when anisotropic filtering is unavailable.
+    public float SamplerAnisotropy { get; }
+
     public unsafe VulkanContext(GlfwWindow window, bool enableValidation) {
 
         var extensions = new HashSet<string>();
@@ -105,7 +108,10 @@ public sealed class VulkanContext : IDisposable {
 
         };
 
-        var features = new VkPhysicalDeviceFeatures();
+        var supported = PhysicalDevice.GetFeatures();
+        var features = new VkPhysicalDeviceFeatures { SamplerAnisotropy = supported.SamplerAnisotropy };
+
+        SamplerAnisotropy = supported.SamplerAnisotropy ? Math.Min(16.0f, PhysicalDevice.GetProperties().Limits.MaxSamplerAnisotropy) : 1.0f;
         var features13 = new VkPhysicalDeviceVulkan13Features { Synchronization2 = true };
 
         var deviceExtensions = new HashSet<string>();

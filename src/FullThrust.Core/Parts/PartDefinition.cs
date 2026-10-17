@@ -20,6 +20,9 @@ public sealed class PartDefinition : IPartDefinition {
 
     public required ShapeKind Shape { get; init; }
 
+    // Null draws the debug shape instead.
+    public ModelDefinition? Model { get; init; }
+
     public required float4 Color { get; init; }
 
     public required double DragCoefficient { get; init; }

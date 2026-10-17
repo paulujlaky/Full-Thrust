@@ -8,14 +8,17 @@ public sealed class PartCatalog {
 
     private readonly Dictionary<string, PartDefinition> _parts;
 
-    public PartCatalog(ResourceDefinition[] resources, Dictionary<string, PartDefinition> parts) {
+    public PartCatalog(ResourceDefinition[] resources, Dictionary<string, PartDefinition> parts, ModelCatalog models) {
 
         Resources = resources;
+        Models = models;
         _parts = parts;
 
     }
 
     public IReadOnlyList<ResourceDefinition> Resources { get; }
+
+    public ModelCatalog Models { get; }
 
     public IEnumerable<PartDefinition> Parts => _parts.Values;
 
@@ -49,18 +52,20 @@ public static class PartCatalogLoader {
 
     };
 
-    public static PartCatalog LoadFile(string path) => Load(File.ReadAllText(path));
+    public static PartCatalog LoadFile(string path, ModelCatalog? models = null) => Load(File.ReadAllText(path), models);
 
-    public static PartCatalog Load(string json) {
+    public static PartCatalog Load(string json, ModelCatalog? models = null) {
 
         var data = JsonSerializer.Deserialize<PartCatalogData>(json, Options)
             ?? throw new InvalidDataException("Part catalog file is empty.");
 
-        return Build(data);
+        return Build(data, models);
 
     }
 
-    public static PartCatalog Build(PartCatalogData data) {
+    public static PartCatalog Build(PartCatalogData data, ModelCatalog? models = null) {
+
+        models ??= new ModelCatalog();
 
         if (data.Resources.Count > ResourceSet.Capacity) {
 
@@ -88,7 +93,7 @@ public static class PartCatalogLoader {
 
         foreach (var part in data.Parts) {
 
-            if (!parts.TryAdd(part.Id, CreatePart(part, resources))) {
+            if (!parts.TryAdd(part.Id, CreatePart(part, resources, models))) {
 
                 throw new InvalidDataException($"Duplicate part id '{part.Id}'.");
 
@@ -96,11 +101,11 @@ public static class PartCatalogLoader {
 
         }
 
-        return new PartCatalog(resources, parts);
+        return new PartCatalog(resources, parts, models);
 
     }
 
-    private static PartDefinition CreatePart(PartData data, ResourceDefinition[] resources) {
+    private static PartDefinition CreatePart(PartData data, ResourceDefinition[] resources, ModelCatalog models) {
 
         if (string.IsNullOrWhiteSpace(data.Id)) {
 
@@ -160,6 +165,7 @@ public static class PartCatalogLoader {
 
             Shape = Enum.Parse<ShapeKind>(data.Shape, ignoreCase: true),
             Color = color,
+            Model = data.Model is { } model ? RegisterModel(data, model, models) : null,
             DragCoefficient = data.DragCoefficient,
 
             Modules = modules.ToArray(),
@@ -167,6 +173,23 @@ public static class PartCatalogLoader {
         };
 
     }
+
+    private static ModelDefinition RegisterModel(PartData part, PartModelData model, ModelCatalog models) {
+
+        if (string.IsNullOrWhiteSpace(model.File)) {
+
+            throw new InvalidDataException($"{part.Id}: a part model needs a file.");
+
+        }
+
+        var fit = Enum.Parse<ModelFit>(model.Fit, ignoreCase: true);
+        var size = new double3(part.Diameter, part.Length, part.Diameter);
+
+        return models.Register(model.File, Vector(model.RotationDeg), fit, size, Vector(model.Offset));
+
+    }
+
+    private static double3 Vector(double[] values) => values.Length >= 3 ? new double3(values[0], values[1], values[2]) : double3.Zero;
 
     private static TankDefinition CreateTank(PartData part, TankData data, ResourceDefinition[] resources) {
 
