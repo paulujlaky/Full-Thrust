@@ -34,6 +34,7 @@ public sealed class Renderer : IDisposable {
         var device = context.Device;
 
         Swapchain = new Swapchain(context, framebufferSize, vsync);
+        Capture = new FrameCapture(context);
 
         _commandPool = device.CreateCommandPool(new VkCommandPoolCreateInfo {
 
@@ -61,6 +62,8 @@ public sealed class Renderer : IDisposable {
     }
 
     public Swapchain Swapchain { get; }
+
+    public FrameCapture Capture { get; }
 
     public float4 ClearColor { get; set; } = new(0.004f, 0.005f, 0.012f, 1);
 
@@ -160,6 +163,13 @@ public sealed class Renderer : IDisposable {
         }
 
         cmd.EndRenderPass();
+
+        if (Capture.IsPending && Swapchain.SupportsCapture) {
+
+            Capture.Record(cmd, Swapchain.Image(imageIndex), Swapchain.Extent, Swapchain.SurfaceFormat.Format);
+
+        }
+
         cmd.End();
 
         var renderFinished = _renderFinished[imageIndex];
@@ -167,6 +177,7 @@ public sealed class Renderer : IDisposable {
         _context.GraphicsQueue.Submit([_imageAvailable[_frame]], [VkPipelineStageFlags.ColorAttachmentOutputBit], [cmd], [renderFinished], fence);
 
         Present(renderFinished, imageIndex);
+        Capture.CompleteAfterSubmit();
 
         _frame = (_frame + 1) % FramesInFlight;
         FramesRendered++;
@@ -283,6 +294,7 @@ public sealed class Renderer : IDisposable {
 
         device.DestroyCommandPool(_commandPool, null);
 
+        Capture.Dispose();
         Swapchain.Dispose();
 
     }

@@ -26,7 +26,15 @@ dotnet test
 dotnet run --project src/FullThrust.Game
 ```
 
-Flags: `--no-vsync`, `--no-validation`, `--no-overlay`, and `--frames N` (smoke test: full throttle, logs timing and allocation stats after a 3 s warmup, then exits).
+Flags: `--no-vsync`, `--no-validation`, `--no-overlay`, `--scenario lowOrbit|lunarTransfer`, `--focus N` (0 craft, 1 Earth, 2 Moon), `--camera-distance M`.
+
+Smoke tests: `--frames N` measures N frames after a 3 s warmup, logs timing, allocation and SOI-transition stats, then exits. Add `--warp RATE`, `--throttle T` and `--capture-every K` (PNGs to `captures/`, or `--capture-dir`) for scripted visual checks, e.g.
+
+```sh
+dotnet run --project src/FullThrust.Game -- --scenario lunarTransfer --focus 1 --camera-distance 9e8 --warp 100000 --frames 1200 --capture-every 300
+```
+
+In game, F12 saves a screenshot.
 
 ## License
 The license is the [Unlicense](https://unlicense.org/), which allows for free use, modification, and distribution of the software.

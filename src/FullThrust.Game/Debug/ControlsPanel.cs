@@ -11,7 +11,7 @@ public sealed class ControlsPanel : IDebugPanel {
 
     public void Draw() {
 
-        ImGui.SetNextWindowPos(new float2(420, 420), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowPos(new float2(1180, 660), ImGuiCond.FirstUseEver);
 
         if (ImGui.Begin("Controls"u8)) {
 
@@ -19,7 +19,9 @@ public sealed class ControlsPanel : IDebugPanel {
             ImGui.BulletText("Shift/Ctrl throttle up/down, Z full, X cut"u8);
             ImGui.BulletText("I/K J/L H/N translate"u8);
             ImGui.BulletText("Right mouse drag: orbit camera, wheel: zoom"u8);
-            ImGui.BulletText("Space: pause, F3: overlay, Esc: quit"u8);
+            ImGui.BulletText("Tab: cycle camera focus (craft, Earth, Moon)"u8);
+            ImGui.BulletText(". / , : time warp up/down, / : stop warp"u8);
+            ImGui.BulletText("Space: pause, F3: overlay, F12: screenshot, Esc: quit"u8);
 
         }
 

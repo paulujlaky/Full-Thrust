@@ -14,6 +14,7 @@
     <PackageVersion Include="Ahwoo.Brutal.ImGui.Backends" Version="$(BrutalVersion)" />
     <PackageVersion Include="Ahwoo.Brutal.ImGui.Extensions" Version="$(BrutalVersion)" />
     <PackageVersion Include="Ahwoo.Brutal.ShaderC" Version="$(BrutalVersion)" />
+    <PackageVersion Include="Ahwoo.Brutal.Stb" Version="$(BrutalVersion)" />
   </ItemGroup>
 
   <ItemGroup>

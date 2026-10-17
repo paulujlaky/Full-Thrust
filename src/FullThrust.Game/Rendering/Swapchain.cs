@@ -47,6 +47,10 @@ public sealed class Swapchain : IDisposable {
 
     public VkFramebuffer Framebuffer(int imageIndex) => _framebuffers[imageIndex];
 
+    public VkImage Image(int imageIndex) => _images[imageIndex];
+
+    public bool SupportsCapture { get; private set; }
+
     public void Recreate(int2 framebufferSize, bool vsync) {
 
         _context.Device.WaitIdle();
@@ -82,6 +86,8 @@ public sealed class Swapchain : IDisposable {
 
         MinImageCount = Math.Max(2, capabilities.MinImageCount);
 
+        SupportsCapture = capabilities.SupportedUsageFlags.HasFlag(VkImageUsageFlags.TransferSrcBit);
+
         var old = Handle;
 
         Handle = device.CreateSwapchainKHR(new VkSwapchainCreateInfoKHR {
@@ -92,7 +98,7 @@ public sealed class Swapchain : IDisposable {
             ImageColorSpace = SurfaceFormat.ColorSpace,
             ImageExtent = Extent,
             ImageArrayLayers = 1,
-            ImageUsage = VkImageUsageFlags.ColorAttachmentBit,
+            ImageUsage = VkImageUsageFlags.ColorAttachmentBit | (SupportsCapture ? VkImageUsageFlags.TransferSrcBit : VkImageUsageFlags.None),
             ImageSharingMode = VkSharingMode.Exclusive,
 
             PreTransform = capabilities.SupportedTransforms.HasFlag(VkSurfaceTransformFlagsKHR.IdentityBitKHR)

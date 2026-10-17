@@ -1,0 +1,51 @@
+{
+  // SI units; angles in degrees. Orbital elements are relative to the world reference plane (XZ, +Y north).
+  "name": "Earth-Moon",
+  "bodies": [
+    {
+      "name": "Earth",
+      "mass": 5.9722e24,
+      "gravitationalParameter": 3.986004418e14,
+      "radius": 6371000,
+      "rotationPeriod": 86164.0905,
+      "axialTiltDeg": 23.44,
+      "initialRotationDeg": 0,
+      "debugColor": [0.18, 0.35, 0.65],
+      "atmosphere": {
+        "height": 140000,
+        "surfacePressure": 101325,
+        "molarMass": 0.0289644,
+        "layers": [
+          { "baseAltitude": 0, "baseTemperature": 288.15, "lapseRate": -0.0065 },
+          { "baseAltitude": 11000, "baseTemperature": 216.65, "lapseRate": 0.0 },
+          { "baseAltitude": 20000, "baseTemperature": 216.65, "lapseRate": 0.001 },
+          { "baseAltitude": 32000, "baseTemperature": 228.65, "lapseRate": 0.0028 },
+          { "baseAltitude": 47000, "baseTemperature": 270.65, "lapseRate": 0.0 },
+          { "baseAltitude": 51000, "baseTemperature": 270.65, "lapseRate": -0.0028 },
+          { "baseAltitude": 71000, "baseTemperature": 214.65, "lapseRate": -0.002 },
+          { "baseAltitude": 84852, "baseTemperature": 186.946, "lapseRate": 0.0 }
+        ]
+      }
+    },
+    {
+      "name": "Moon",
+      "parent": "Earth",
+      "mass": 7.342e22,
+      "gravitationalParameter": 4.9048695e12,
+      "radius": 1737400,
+      "rotationPeriod": 2360591.5,
+      "axialTiltDeg": 6.68,
+      "initialRotationDeg": 0,
+      "debugColor": [0.55, 0.55, 0.52],
+      "orbit": {
+        "semiMajorAxis": 384399000,
+        "eccentricity": 0.0549,
+        "inclinationDeg": 5.145,
+        "longitudeOfAscendingNodeDeg": 125.08,
+        "argumentOfPeriapsisDeg": 318.15,
+        "meanAnomalyAtEpochDeg": 135.27,
+        "epoch": 0
+      }
+    }
+  ]
+}

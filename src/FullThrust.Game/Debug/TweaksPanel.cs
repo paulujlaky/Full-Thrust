@@ -36,7 +36,8 @@ public sealed class TweaksPanel : IDebugPanel {
 
     public void Draw() {
 
-        ImGui.SetNextWindowPos(new float2(420, 30), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowPos(new float2(330, 30), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowCollapsed(true, ImGuiCond.FirstUseEver);
 
         if (ImGui.Begin("Tweakables"u8)) {
 

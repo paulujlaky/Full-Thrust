@@ -14,10 +14,12 @@
     <PackageReference Include="Ahwoo.Brutal.ImGui.Backends" />
     <PackageReference Include="Ahwoo.Brutal.ImGui.Extensions" />
     <PackageReference Include="Ahwoo.Brutal.ShaderC" />
+    <PackageReference Include="Ahwoo.Brutal.Stb" />
   </ItemGroup>
 
   <ItemGroup>
     <None Update="Shaders\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\data\**\*" Link="data\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,5 +1,7 @@
-﻿using Brutal.Logging;
+﻿using System.Globalization;
+using Brutal.Logging;
 using FullThrust.Game;
+using FullThrust.Game.Scene;
 using Microsoft.Extensions.Logging;
 
 LogSystem.Initialize(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
@@ -12,11 +14,27 @@ var options = new GameOptions {
 
 };
 
-var framesIndex = Array.IndexOf(args, "--frames");
+string? Value(string name) {
 
-if (framesIndex >= 0 && framesIndex + 1 < args.Length) {
+    var index = Array.IndexOf(args, name);
 
-    options.SmokeFrames = int.Parse(args[framesIndex + 1]);
+    return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
+
+}
+
+double Number(string name, double fallback) => Value(name) is { } text ? double.Parse(text, CultureInfo.InvariantCulture) : fallback;
+
+options.SmokeFrames = (int)Number("--frames", 0);
+options.SmokeWarpRate = Number("--warp", 1);
+options.SmokeThrottle = Number("--throttle", 0);
+options.CaptureEvery = (int)Number("--capture-every", 0);
+options.Focus = (int)Number("--focus", 0);
+options.CameraDistance = Number("--camera-distance", 0);
+options.CaptureDirectory = Value("--capture-dir") ?? options.CaptureDirectory;
+
+if (Value("--scenario") is { } scenario) {
+
+    options.Scenario = Enum.Parse<Scenario>(scenario, ignoreCase: true);
 
 }
 

@@ -5,6 +5,8 @@ AGENTS.md
 bin/
 obj/
 .vs/
-*.user
 TestResults/
+captures
 imgui.ini
+*.user
+captures/

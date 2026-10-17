@@ -92,12 +92,11 @@ public sealed class SimulationPanel : IDebugPanel {
 
         var p = transform.Position;
         var local = _origin.ToLocal(p);
-        var altitude = p.Length() - DemoScene.PlanetRadius;
 
         ImGui.SeparatorText("Craft"u8);
         ImGui.Text($"World ({p.X:F3}, {p.Y:F3}, {p.Z:F3})");
         ImGui.Text($"Local ({local.X:F3}, {local.Y:F3}, {local.Z:F3})");
-        ImGui.Text($"Altitude {altitude / 1000:F3} km  speed {velocity.Linear.Length():F2} m/s");
+        ImGui.Text($"Inertial speed {velocity.Linear.Length():F2} m/s");
         ImGui.Text($"Throttle {control.Throttle * 100:F0}%  P {control.Pitch:F0} Y {control.Yaw:F0} R {control.Roll:F0}");
 
     }

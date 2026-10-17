@@ -14,10 +14,12 @@ layout(push_constant) uniform Push {
 } pc;
 
 layout(location = 0) out vec3 vNormal;
+layout(location = 1) out vec3 vObjectNormal;
 
 void main() {
 
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
     vNormal = mat3(pc.normal0.xyz, pc.normal1.xyz, pc.normal2.xyz) * inNormal;
+    vObjectNormal = inNormal;
 
 }
