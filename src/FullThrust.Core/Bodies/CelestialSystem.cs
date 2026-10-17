@@ -145,6 +145,44 @@ public sealed class CelestialSystem {
 
     }
 
+    // Acceleration of a body's non-rotating frame relative to the root, so physics in root space matches patched conics.
+    public double3 FrameAcceleration(int body, double universalTime) {
+
+        var acceleration = double3.Zero;
+
+        for (var current = _bodies[body]; current.Parent is not null; current = current.Parent) {
+
+            var r = RelativeState(current, universalTime).Position;
+            var distance = r.Length();
+
+            acceleration -= r * (current.OrbitGravitationalParameter / (distance * distance * distance));
+
+        }
+
+        return acceleration;
+
+    }
+
+    // Latitude and longitude in radians, in the body-fixed frame (+Y north).
+    public static double3 BodyFixedPoint(CelestialBody body, double latitude, double longitude, double altitude) {
+
+        var radius = body.Radius + altitude;
+        var cosLatitude = Math.Cos(latitude);
+
+        return new double3(cosLatitude * Math.Cos(longitude), Math.Sin(latitude), -cosLatitude * Math.Sin(longitude)) * radius;
+
+    }
+
+    public StateVector BodyFixedToWorld(int body, double3 bodyFixed, double universalTime) {
+
+        var celestial = _bodies[body];
+        var frame = StateAt(body, universalTime);
+        var offset = celestial.RotationAt(universalTime) * bodyFixed;
+
+        return new StateVector(frame.Position + offset, frame.Velocity + double3.Cross(celestial.AngularVelocity, offset));
+
+    }
+
     public CelestialBody DominantBodyAt(double3 position, double universalTime) {
 
         var best = Root;

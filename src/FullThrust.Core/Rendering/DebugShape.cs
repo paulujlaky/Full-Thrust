@@ -6,6 +6,9 @@ public enum ShapeKind {
 
     Box,
     Sphere,
+    Cylinder,
+    Cone,
+    Frustum,
 
 }
 

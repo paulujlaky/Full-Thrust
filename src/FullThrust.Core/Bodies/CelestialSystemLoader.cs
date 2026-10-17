@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Brutal.Numerics;
+using FullThrust.Core.Atmosphere;
 using FullThrust.Core.Orbits;
 using FullThrust.Core.Simulation;
 
@@ -71,6 +72,7 @@ public static class CelestialSystemLoader {
                 AxialTilt = Radians(definition.AxialTiltDeg),
                 InitialRotation = Radians(definition.InitialRotationDeg),
                 Atmosphere = definition.Atmosphere,
+                AtmosphereModel = CreateAtmosphere(definition, mu),
                 DebugColor = color,
 
             };
@@ -108,9 +110,22 @@ public static class CelestialSystemLoader {
             OrbitalPeriod = elements.Period(parent.GravitationalParameter + mu),
             SphereOfInfluence = SphereOfInfluence.Radius(orbit.SemiMajorAxis, mass, parent.Mass),
             Atmosphere = definition.Atmosphere,
+            AtmosphereModel = CreateAtmosphere(definition, mu),
             DebugColor = color,
 
         };
+
+    }
+
+    private static LayeredAtmosphere? CreateAtmosphere(CelestialBodyData definition, double mu) {
+
+        if (definition.Atmosphere is not { } atmosphere) {
+
+            return null;
+
+        }
+
+        return new LayeredAtmosphere(atmosphere, mu / (definition.Radius * definition.Radius), definition.Radius);
 
     }
 

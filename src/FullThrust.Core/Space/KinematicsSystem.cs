@@ -1,5 +1,6 @@
 using FullThrust.Core.Ecs;
 using FullThrust.Core.Orbits;
+using FullThrust.Core.Physics;
 using FullThrust.Core.Simulation;
 
 namespace FullThrust.Core.Space;
@@ -10,11 +11,19 @@ public sealed class KinematicsSystem : ISystem {
 
         var dt = time.DeltaTime;
         var orbits = world.Store<OrbitState>();
+        var physics = world.Store<PhysicsBody>();
 
         foreach (var row in world.Query<Transform, Velocity>()) {
 
             ref var transform = ref row.C1;
             ref readonly var velocity = ref row.C2;
+
+            // Rigid bodies are integrated by the physics world.
+            if (physics.Has(row.Entity)) {
+
+                continue;
+
+            }
 
             // Orbiting entities get their position from the conic instead.
             if (!orbits.Has(row.Entity)) {

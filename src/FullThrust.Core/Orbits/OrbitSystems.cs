@@ -1,5 +1,6 @@
 using FullThrust.Core.Bodies;
 using FullThrust.Core.Ecs;
+using FullThrust.Core.Physics;
 using FullThrust.Core.Simulation;
 using FullThrust.Core.Space;
 
@@ -32,45 +33,6 @@ public sealed class CelestialBodySystem : ISystem {
 
 }
 
-// Thrust never leaves the rails: each fixed step folds its delta-v into a fresh conic.
-public sealed class OrbitalThrustSystem : ISystem {
-
-    private readonly CelestialSystem _system;
-
-    public OrbitalThrustSystem(CelestialSystem system) {
-
-        _system = system;
-
-    }
-
-    public void Update(World world, in SimTime time) {
-
-        foreach (var row in world.Query<OrbitState, ThrustAcceleration>()) {
-
-            ref var orbit = ref row.C1;
-            ref readonly var thrust = ref row.C2;
-
-            if (!thrust.IsThrusting) {
-
-                continue;
-
-            }
-
-            var mu = _system[orbit.Body].GravitationalParameter;
-            var state = _system.Propagator.Propagate(orbit.Epoch, mu, time.UniversalTime - orbit.EpochTime);
-
-            state.Velocity += thrust.Linear * time.DeltaTime;
-
-            orbit.Epoch = state;
-            orbit.EpochTime = time.UniversalTime;
-            orbit.Version++;
-
-        }
-
-    }
-
-}
-
 public sealed class OrbitPropagationSystem : ISystem {
 
     private const int MaxTransitionsPerFrame = 8;
@@ -94,7 +56,16 @@ public sealed class OrbitPropagationSystem : ISystem {
         var transforms = world.Store<Transform>();
         var velocities = world.Store<Velocity>();
 
+        var physics = world.Store<PhysicsBody>();
+
         foreach (var row in world.Query<OrbitState>()) {
+
+            // Physics craft own their transform and re-fit the conic themselves.
+            if (physics.Has(row.Entity)) {
+
+                continue;
+
+            }
 
             ref var orbit = ref row.C1;
 

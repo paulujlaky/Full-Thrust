@@ -124,36 +124,6 @@ public class PatchedConicTests {
     }
 
     [Fact]
-    public void ThrustRewritesTheConicAndBumpsVersion() {
-
-        var system = TestData.EarthMoon();
-        var world = new World();
-        var thrust = new OrbitalThrustSystem(system);
-
-        var craft = world.Create();
-        var leo = OrbitScenarios.Circular(system.Root.GravitationalParameter, ParkingRadius);
-
-        world.Add(craft, OrbitState.Create(0, leo, 0));
-        world.Add(craft, new ThrustAcceleration { Linear = double3.Normalize(leo.Velocity) * 10 });
-
-        var before = OrbitalElements.FromState(leo, system.Root.GravitationalParameter);
-
-        for (var tick = 1; tick <= 50; tick++) {
-
-            thrust.Update(world, new SimTime(0.02, tick * 0.02, 0.02, tick, false));
-
-        }
-
-        var orbit = world.Get<OrbitState>(craft);
-        var after = OrbitalElements.FromState(orbit.Epoch, system.Root.GravitationalParameter);
-
-        Assert.Equal(50, orbit.Version);
-        Assert.Equal(1.0, orbit.EpochTime, 1e-12);
-        Assert.True(after.Apoapsis > before.Apoapsis + 30_000);
-
-    }
-
-    [Fact]
     public void PredictorChainsPatchesThroughTheMoon() {
 
         var system = TestData.EarthMoon();

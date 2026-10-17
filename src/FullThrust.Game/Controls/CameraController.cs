@@ -55,6 +55,24 @@ public sealed class CameraController {
 
     public void AddTarget(CameraTarget target) => _targets.Add(target);
 
+    public void Retarget(int index, Entity entity, double defaultDistance, double minDistance) {
+
+        var target = _targets[index];
+
+        target.Entity = entity;
+        target.DefaultDistance = defaultDistance;
+        target.MinDistance = minDistance;
+
+        _targets[index] = target;
+
+        if (index == _current) {
+
+            Focus(index);
+
+        }
+
+    }
+
     public string TargetLabel(int index) => _targets[index].Label;
 
     public void Focus(int index) {

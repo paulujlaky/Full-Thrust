@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FullThrust.Core\FullThrust.Core.csproj" />
+    <ProjectReference Include="..\..\src\FullThrust.Physics.Jolt\FullThrust.Physics.Jolt.csproj" />
   </ItemGroup>
 
   <ItemGroup>

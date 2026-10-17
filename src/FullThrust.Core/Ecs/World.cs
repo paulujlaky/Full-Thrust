@@ -26,9 +26,31 @@ public sealed class World {
 
     private IComponentStore?[] _stores = new IComponentStore?[16];
 
+    private int _reserved;
+
     public int AliveCount => _aliveCount;
 
     public int Capacity => _generations.Length;
+
+    // Pre-sizes entity bookkeeping, current stores and any created later, so spawning mid-game stays allocation-free.
+    public void Reserve(int entities) {
+
+        _reserved = Math.Max(_reserved, entities);
+
+        if (_generations.Length < entities) {
+
+            Array.Resize(ref _generations, entities);
+            Array.Resize(ref _freeIndices, entities);
+
+        }
+
+        for (var i = 0; i < _stores.Length; i++) {
+
+            _stores[i]?.Reserve(_reserved);
+
+        }
+
+    }
 
     public Entity Create() {
 
@@ -115,6 +137,13 @@ public sealed class World {
         }
 
         store = new ComponentStore<T>();
+
+        if (_reserved > 0) {
+
+            store.Reserve(_reserved);
+
+        }
+
         _stores[id] = store;
 
         return store;

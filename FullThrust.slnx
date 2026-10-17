@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/FullThrust.Core/FullThrust.Core.csproj" />
     <Project Path="src/FullThrust.Game/FullThrust.Game.csproj" />
+    <Project Path="src/FullThrust.Physics.Jolt/FullThrust.Physics.Jolt.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FullThrust.Core.Tests/FullThrust.Core.Tests.csproj" />

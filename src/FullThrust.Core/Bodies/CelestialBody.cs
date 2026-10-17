@@ -1,4 +1,5 @@
 using Brutal.Numerics;
+using FullThrust.Core.Atmosphere;
 using FullThrust.Core.Orbits;
 using FullThrust.Core.Simulation;
 
@@ -42,13 +43,40 @@ public sealed class CelestialBody {
 
     public AtmosphereData? Atmosphere { get; init; }
 
+    public IAtmosphereModel? AtmosphereModel { get; init; }
+
     public float3 DebugColor { get; init; }
 
     public IReadOnlyList<CelestialBody> Children => ChildList;
 
     public bool IsRoot => Parent is null;
 
-    public bool HasAtmosphere => Atmosphere is not null;
+    public bool HasAtmosphere => AtmosphereModel is not null;
+
+    public double SurfaceGravity => GravitationalParameter / (Radius * Radius);
+
+    // World-space spin vector; the atmosphere and surface co-rotate with it.
+    public double3 AngularVelocity {
+
+        get {
+
+            if (RotationPeriod <= 0) {
+
+                return double3.Zero;
+
+            }
+
+            var axis = doubleQuat.CreateFromAxisAngle(double3.UnitX, AxialTilt) * double3.UnitY;
+
+            return axis * (2 * Math.PI / RotationPeriod);
+
+        }
+
+    }
+
+    public bool InAtmosphere(double altitude) => AtmosphereModel is { } atmosphere && altitude < atmosphere.Height;
+
+    public AtmosphereSample SampleAtmosphere(double altitude) => AtmosphereModel?.Sample(altitude) ?? AtmosphereSample.Vacuum;
 
     public doubleQuat RotationAt(double universalTime) {
 

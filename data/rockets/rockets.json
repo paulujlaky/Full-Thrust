@@ -1,0 +1,54 @@
+{
+  // Parts are listed nose first; stack parts hang below the previous stack entry unless "parent" names an
+  // earlier index. "stage" is the activation order: 0 fires on the first stage command, -1 never.
+  "rockets": [
+    {
+      "id": "pinnacle",
+      "name": "Pinnacle",
+      "description": "Single-stage suborbital crew launcher in the class of Mercury-Redstone.",
+      "parts": [
+        { "part": "pod-pinnacle" },
+        { "part": "rcs-quad", "parent": 0, "radial": 4, "height": 0.35, "angleDeg": 45 },
+        { "part": "decoupler-1.9", "stage": 1 },
+        { "part": "tank-pinnacle" },
+        { "part": "engine-ra7", "stage": 0 }
+      ]
+    },
+    {
+      "id": "harrier",
+      "name": "Harrier",
+      "description": "Two-stage kerolox orbital launcher with a crew capsule, Falcon 9 class.",
+      "parts": [
+        { "part": "pod-concord" },
+        { "part": "rcs-quad", "parent": 0, "radial": 4, "height": 0.3, "angleDeg": 45 },
+        { "part": "decoupler-3.7", "stage": 2 },
+        { "part": "tank-harrier-2" },
+        { "part": "engine-harrier-vac", "stage": 1 },
+        { "part": "decoupler-3.7", "stage": 1 },
+        { "part": "tank-harrier-1" },
+        { "part": "engine-harrier-9", "stage": 0 }
+      ]
+    },
+    {
+      "id": "colossus",
+      "name": "Colossus",
+      "description": "Three-stage lunar launcher with a command and service module, Saturn V class.",
+      "parts": [
+        { "part": "pod-odyssey" },
+        { "part": "decoupler-0.5", "stage": 4 },
+        { "part": "tank-service" },
+        { "part": "rcs-quad", "parent": 2, "radial": 4, "height": 0.7, "angleDeg": 45 },
+        { "part": "engine-service", "stage": 3 },
+        { "part": "decoupler-adapter", "stage": 3 },
+        { "part": "tank-colossus-3" },
+        { "part": "engine-colossus-1", "stage": 2 },
+        { "part": "decoupler-6.6", "stage": 2 },
+        { "part": "tank-colossus-2" },
+        { "part": "engine-colossus-2", "stage": 1 },
+        { "part": "decoupler-10", "stage": 1 },
+        { "part": "tank-colossus-1" },
+        { "part": "engine-colossus-5", "stage": 0 }
+      ]
+    }
+  ]
+}

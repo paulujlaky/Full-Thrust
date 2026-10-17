@@ -10,6 +10,7 @@ namespace FullThrust.Game.Scene;
 
 public enum Scenario {
 
+    Launchpad,
     LowOrbit,
     LunarTransfer,
 
@@ -19,26 +20,39 @@ public sealed class DemoScene {
 
     public const double ParkingAltitude = 200_000.0;
 
+    // A Cape Canaveral-like latitude; longitude is arbitrary on a featureless planet.
+    public const double LaunchLatitudeDeg = 28.5;
+    public const double LaunchLongitudeDeg = 0.0;
+
     private Entity[] _bodyEntities = [];
 
-    public DemoScene(CelestialSystem system) {
+    public DemoScene(CelestialSystem system, RocketCatalog rockets, FlightFocus focus) {
 
         System = system;
+        Rockets = rockets;
+        Focus = focus;
         Moon = system.Find("Moon") ?? throw new InvalidDataException("The demo scene expects a body named Moon.");
+        Rocket = rockets.Rockets[0];
 
     }
 
     public CelestialSystem System { get; }
 
+    public RocketCatalog Rockets { get; }
+
+    public FlightFocus Focus { get; }
+
     public CelestialBody Moon { get; }
 
-    public Entity Craft { get; private set; }
+    public Entity Craft => Focus.Craft;
 
     public Scenario Scenario { get; private set; }
 
+    public RocketPreset Rocket { get; private set; }
+
     public Entity BodyEntity(int index) => _bodyEntities[index];
 
-    public void Populate(World world, Scenario scenario, double universalTime) {
+    public void Populate(World world, Scenario scenario, RocketPreset rocket, double universalTime) {
 
         _bodyEntities = new Entity[System.Count];
 
@@ -58,46 +72,32 @@ public sealed class DemoScene {
 
         }
 
-        Craft = world.Create();
-        world.Add(Craft, new Name("Craft"));
-        world.Add(Craft, new Transform(double3.Zero, doubleQuat.Identity));
-        world.Add(Craft, new Velocity());
-        world.Add(Craft, new ThrustAcceleration());
-        world.Add(Craft, new CraftControl());
-        world.Add(Craft, new ControllableCraft { Mass = 5_000, MaxThrust = 150_000, MaxAngularAcceleration = 1.5, AngularDamping = 1.0 });
-        world.Add(Craft, new DebugShape { Kind = ShapeKind.Box, Scale = new float3(1.25f, 6f, 1.25f), Color = new float4(0.85f, 0.85f, 0.88f, 1) });
-        world.Add(Craft, OrbitState.Create(0, default, universalTime));
-
-        Reset(world, scenario, universalTime);
+        Spawn(world, scenario, rocket, universalTime);
 
     }
 
-    public void Reset(World world, Scenario scenario, double universalTime) {
+    // Callers remove the previous craft (and their physics bodies) first.
+    public Entity Spawn(World world, Scenario scenario, RocketPreset rocket, double universalTime) {
 
         Scenario = scenario;
+        Rocket = rocket;
 
         var planet = Moon.Parent!;
-        var parkingRadius = planet.Radius + ParkingAltitude;
+        var parking = planet.Radius + ParkingAltitude;
 
-        var state = scenario switch {
+        var placement = scenario switch {
 
-            Scenario.LunarTransfer => OrbitScenarios.LunarTransfer(System, Moon, parkingRadius, universalTime),
-            _ => OrbitScenarios.Circular(planet.GravitationalParameter, parkingRadius),
+            Scenario.Launchpad => CraftPlacement.OnSurface(System, planet, LaunchLatitudeDeg * Math.PI / 180, LaunchLongitudeDeg * Math.PI / 180, rocket, universalTime),
+            Scenario.LunarTransfer => CraftPlacement.InOrbit(System, planet, OrbitScenarios.LunarTransfer(System, Moon, parking, universalTime), universalTime),
+            _ => CraftPlacement.InOrbit(System, planet, OrbitScenarios.Circular(planet.GravitationalParameter, parking), universalTime),
 
         };
 
-        ref var orbit = ref world.Get<OrbitState>(Craft);
+        Focus.Craft = placement.Spawn(world, rocket);
 
-        orbit.Rebase(planet.Index, state, universalTime);
+        world.Get<CraftControl>(Focus.Craft).Rcs = scenario != Scenario.Launchpad;
 
-        ref var transform = ref world.Get<Transform>(Craft);
-
-        // Point the nose prograde so throttle raises the orbit.
-        transform.Rotation = OrbitCameraRig.LookRotation(double3.Normalize(state.Position), double3.Normalize(state.Velocity));
-        transform.Position = System.StateAt(planet.Index, universalTime).Position + state.Position;
-
-        world.Get<Velocity>(Craft) = default;
-        world.Get<CraftControl>(Craft) = default;
+        return Focus.Craft;
 
     }
 

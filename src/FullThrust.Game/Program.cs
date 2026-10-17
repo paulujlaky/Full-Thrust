@@ -31,6 +31,12 @@ options.CaptureEvery = (int)Number("--capture-every", 0);
 options.Focus = (int)Number("--focus", 0);
 options.CameraDistance = Number("--camera-distance", 0);
 options.CaptureDirectory = Value("--capture-dir") ?? options.CaptureDirectory;
+options.CameraPitch = Number("--camera-pitch", double.NaN);
+options.TimeScale = Number("--time-scale", 1);
+options.SmokeStages = (int)Number("--stage", 0);
+options.SmokeAutoStage = args.Contains("--auto-stage");
+options.SmokeSas = args.Contains("--sas");
+options.Rocket = Value("--rocket");
 
 if (Value("--scenario") is { } scenario) {
 

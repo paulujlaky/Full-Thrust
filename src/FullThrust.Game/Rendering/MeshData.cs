@@ -66,6 +66,77 @@ public sealed class MeshData {
 
     }
 
+    // Unit height along Y centred on the origin, bottom radius 0.5; a top radius of 0.5 gives a cylinder, 0 a cone.
+    public static MeshData UnitFrustum(float topRadius, int segments) {
+
+        const float BottomRadius = 0.5f;
+
+        var hasTop = topRadius > 0;
+        var capCount = hasTop ? 2 : 1;
+
+        var vertices = new Vertex[(segments + 1) * 2 + capCount * (segments + 1)];
+        var indices = new uint[segments * 6 + capCount * segments * 3];
+
+        var vi = 0;
+        var ii = 0;
+        var slope = BottomRadius - topRadius;
+
+        for (var s = 0; s <= segments; s++) {
+
+            var theta = 2.0f * MathF.PI * s / segments;
+            var cos = MathF.Cos(theta);
+            var sin = -MathF.Sin(theta);
+            var normal = float3.Normalize(new float3(cos, slope, sin));
+
+            vertices[vi++] = new Vertex(new float3(cos * BottomRadius, -0.5f, sin * BottomRadius), normal);
+            vertices[vi++] = new Vertex(new float3(cos * topRadius, 0.5f, sin * topRadius), normal);
+
+        }
+
+        for (var s = 0; s < segments; s++) {
+
+            var a = (uint)(s * 2);
+
+            indices[ii++] = a;
+            indices[ii++] = a + 2;
+            indices[ii++] = a + 1;
+            indices[ii++] = a + 1;
+            indices[ii++] = a + 2;
+            indices[ii++] = a + 3;
+
+        }
+
+        for (var cap = 0; cap < capCount; cap++) {
+
+            var y = cap == 0 ? -0.5f : 0.5f;
+            var radius = cap == 0 ? BottomRadius : topRadius;
+            var normal = new float3(0, cap == 0 ? -1 : 1, 0);
+            var center = (uint)vi;
+
+            vertices[vi++] = new Vertex(new float3(0, y, 0), normal);
+
+            for (var s = 0; s < segments; s++) {
+
+                var theta = 2.0f * MathF.PI * s / segments;
+
+                vertices[vi++] = new Vertex(new float3(MathF.Cos(theta) * radius, y, -MathF.Sin(theta) * radius), normal);
+
+            }
+
+            for (var s = 0; s < segments; s++) {
+
+                indices[ii++] = center;
+                indices[ii++] = center + 1 + (uint)s;
+                indices[ii++] = center + 1 + (uint)((s + 1) % segments);
+
+            }
+
+        }
+
+        return new MeshData { Vertices = vertices[..vi], Indices = indices[..ii] };
+
+    }
+
     public static MeshData UnitSphere(int rings, int segments) {
 
         var vertices = new Vertex[(rings + 1) * (segments + 1)];

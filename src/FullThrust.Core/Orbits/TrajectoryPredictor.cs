@@ -48,6 +48,8 @@ public sealed class TrajectoryPredictor {
 
     }
 
+    public void Reset() => Count = 0;
+
     public void Update(in OrbitState orbit, double now) {
 
         var stale = orbit.Version != _sourceVersion || orbit.Body != _sourceBody || Count == 0 || now > _patches[0].EndTime;

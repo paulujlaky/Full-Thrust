@@ -13,16 +13,11 @@ public struct CraftControl {
 
     public float Throttle;
 
-}
+    public bool Sas;
+    public bool Rcs;
 
-public struct ControllableCraft {
+    public readonly bool HasRotationInput => Pitch != 0 || Yaw != 0 || Roll != 0;
 
-    public double Mass;
-
-    // Placeholder actuation until Sprint 3 engines/RCS replace it.
-    public double MaxThrust;
-    public double MaxAngularAcceleration;
-
-    public double AngularDamping;
+    public readonly bool HasTranslationInput => Translation.X != 0 || Translation.Y != 0 || Translation.Z != 0;
 
 }

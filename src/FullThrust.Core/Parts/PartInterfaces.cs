@@ -18,3 +18,10 @@ public interface IPartDefinition {
     void Attach(World world, Entity part);
 
 }
+
+// New part behaviours plug in as module definitions that add their own components to a part entity.
+public interface IPartModuleDefinition {
+
+    void Attach(World world, Entity part);
+
+}

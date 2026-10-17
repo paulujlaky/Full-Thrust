@@ -7,6 +7,8 @@ using FullThrust.Core.Craft;
 using FullThrust.Core.Diagnostics;
 using FullThrust.Core.Ecs;
 using FullThrust.Core.Orbits;
+using FullThrust.Core.Parts;
+using FullThrust.Core.Physics;
 using FullThrust.Core.Simulation;
 using FullThrust.Core.Space;
 using FullThrust.Game.Controls;
@@ -14,6 +16,7 @@ using FullThrust.Game.Debug;
 using FullThrust.Game.Platform;
 using FullThrust.Game.Rendering;
 using FullThrust.Game.Scene;
+using FullThrust.Physics.Jolt;
 
 namespace FullThrust.Game;
 
@@ -29,11 +32,21 @@ public sealed class GameOptions {
 
     public string SystemFile = Path.Combine("data", "celestial", "earth-moon.json");
 
-    public Scenario Scenario = Scenario.LowOrbit;
+    public string PartsFile = Path.Combine("data", "parts", "parts.json");
+
+    public string RocketsFile = Path.Combine("data", "rockets", "rockets.json");
+
+    public Scenario Scenario = Scenario.Launchpad;
+
+    public string? Rocket;
 
     public int Focus;
 
     public double CameraDistance;
+
+    public double CameraPitch = double.NaN;
+
+    public double TimeScale = 1;
 
     public string CaptureDirectory = "captures";
 
@@ -44,6 +57,12 @@ public sealed class GameOptions {
 
     public double SmokeThrottle;
 
+    public int SmokeStages;
+
+    public bool SmokeAutoStage;
+
+    public bool SmokeSas;
+
     public int CaptureEvery;
 
 }
@@ -53,6 +72,14 @@ public sealed class GameApp : IDisposable {
     private static readonly LogCategory Log = LogCategory.Make("Game");
 
     private const double SmokeWarmupSeconds = 3.0;
+
+    // Covers bodies, several multi-stage craft and their debris without growing ECS storage mid-flight.
+    private const int ReservedEntities = 1024;
+
+    // Sim seconds to wait after a stage before the smoke script may stage again.
+    private const double AutoStageCooldown = 2.0;
+
+    private static readonly double[] StageCaptureDelays = [0.5, 2.0];
 
     private readonly GameOptions _options;
 
@@ -73,23 +100,48 @@ public sealed class GameApp : IDisposable {
     private readonly OrbitEvents _orbitEvents = new();
     private readonly TrajectoryPredictor _predictor;
 
+    private readonly PartCatalog _parts;
+    private readonly RocketCatalog _rockets;
+
+    private readonly JoltRigidBodyWorld _physics;
+    private readonly PhysicsFrame _physicsFrame = new();
+    private readonly FlightFocus _focus = new();
+    private readonly FlightPipeline _flight;
+
     private readonly DemoScene _scene;
     private readonly CameraController _camera;
     private readonly FlightInputSystem _flightInput;
 
     private readonly DebugLines _lines;
     private readonly OrbitDebugDraw _orbitDraw;
+    private readonly CraftDebugDraw _craftDraw;
 
     private readonly FrameStats _stats = new();
     private readonly FrameProfile _profile = new();
 
+    private int _pendingStages;
+    private double _lastStageTime = double.NegativeInfinity;
+    private int _stageCaptures;
+    private bool _profileAfterCapture;
+
     public GameApp(GameOptions options) {
 
         _options = options;
-        _clock = new SimulationClock(_warp);
+        _clock = new SimulationClock(_warp) { TimeScale = options.TimeScale };
+        _world.Reserve(ReservedEntities);
 
-        _bodies = CelestialSystemLoader.LoadFile(Path.Combine(AppContext.BaseDirectory, options.SystemFile), new KeplerPropagator());
+        var root = AppContext.BaseDirectory;
+
+        _bodies = CelestialSystemLoader.LoadFile(Path.Combine(root, options.SystemFile), new KeplerPropagator());
         _predictor = new TrajectoryPredictor(_bodies, new PatchedConicSolver(_bodies));
+
+        _parts = PartCatalogLoader.LoadFile(Path.Combine(root, options.PartsFile));
+        _rockets = RocketCatalogLoader.LoadFile(Path.Combine(root, options.RocketsFile), _parts);
+
+        var rocket = options.Rocket is null ? _rockets.Rockets[0] : _rockets.Find(options.Rocket) ?? throw new ArgumentException($"Unknown rocket '{options.Rocket}'.");
+
+        _physics = new JoltRigidBodyWorld();
+        _flight = new FlightPipeline(_bodies, _physics, _physicsFrame, _focus, _orbitEvents);
 
         if (!Glfw.Init()) {
 
@@ -107,26 +159,27 @@ public sealed class GameApp : IDisposable {
         _renderer = new Renderer(_vulkan, _window.FramebufferSize, options.VSync);
         _debugUi = new DebugUi(_window, _vulkan, _renderer.Swapchain) { Visible = options.Overlay };
 
-        _scene = new DemoScene(_bodies);
-        _scene.Populate(_world, options.Scenario, _clock.UniversalTime);
+        _scene = new DemoScene(_bodies, _rockets, _focus);
+        _scene.Populate(_world, options.Scenario, rocket, _clock.UniversalTime);
 
         _camera = new CameraController(_input, new Camera(), _scene);
-        _flightInput = new FlightInputSystem(_input) { ControlledCraft = _scene.Craft };
+        _flightInput = new FlightInputSystem(_input, _focus);
 
         AddCameraTargets();
 
         _warp.AddConstraint(new ThrustWarpConstraint(_world));
+        _warp.AddConstraint(new PhysicsWarpConstraint(_world));
 
-        _systems
-            .Add(SystemPhase.Update, _flightInput)
-            .Add(SystemPhase.FixedUpdate, new CraftControlSystem())
-            .Add(SystemPhase.FixedUpdate, new OrbitalThrustSystem(_bodies))
-            .Add(SystemPhase.FixedUpdate, new KinematicsSystem())
+        _systems.Add(SystemPhase.Update, _flightInput);
+
+        _flight.AddFixedSystems(_systems)
             .Add(SystemPhase.LateUpdate, new CelestialBodySystem(_bodies))
-            .Add(SystemPhase.LateUpdate, new OrbitPropagationSystem(_bodies, new PatchedConicSolver(_bodies), _orbitEvents));
+            .Add(SystemPhase.LateUpdate, new OrbitPropagationSystem(_bodies, new PatchedConicSolver(_bodies), _orbitEvents))
+            .Add(SystemPhase.LateUpdate, _flight.PartTransforms);
 
         _lines = new DebugLines(_origin);
         _orbitDraw = new OrbitDebugDraw(_bodies, _predictor, _lines);
+        _craftDraw = new CraftDebugDraw(_world, _lines);
 
         var shapes = CreatePasses();
 
@@ -135,7 +188,8 @@ public sealed class GameApp : IDisposable {
         _debugUi.AddPanel(new TweaksPanel(_clock, _origin, _renderer, shapes, _camera, _flightInput));
         _debugUi.AddPanel(new OrbitPanel(_world, _bodies, _clock, _scene, _predictor, _orbitEvents));
         _debugUi.AddPanel(new TimeWarpPanel(_warp, _clock));
-        _debugUi.AddPanel(new ScenarioPanel(ResetScenario, _orbitDraw, _camera, CaptureNow));
+        _debugUi.AddPanel(new ScenarioPanel(ResetScenario, _scene, _orbitDraw, _craftDraw, _camera, CaptureNow));
+        _debugUi.AddPanel(new CraftPanel(_world, _focus, _bodies, _parts, _physicsFrame, _physics, _flight));
         _debugUi.AddPanel(new ControlsPanel());
 
         _origin.ShiftTo(_world.Get<Transform>(_scene.Craft).Position);
@@ -144,7 +198,7 @@ public sealed class GameApp : IDisposable {
 
     private void AddCameraTargets() {
 
-        _camera.AddTarget(new CameraTarget { Label = "Craft", Entity = _scene.Craft, DefaultDistance = 25, MinDistance = 2 });
+        _camera.AddTarget(new CameraTarget { Label = "Craft", Entity = _scene.Craft, DefaultDistance = CraftDistance(_scene.Rocket), MinDistance = 2 });
 
         foreach (var body in _bodies.Bodies) {
 
@@ -167,7 +221,15 @@ public sealed class GameApp : IDisposable {
 
         }
 
+        if (!double.IsNaN(_options.CameraPitch)) {
+
+            _camera.Rig.Pitch = _options.CameraPitch * Math.PI / 180;
+
+        }
+
     }
+
+    private static double CraftDistance(RocketPreset rocket) => Math.Max(25, rocket.Height * 1.6);
 
     private DebugShapePass CreatePasses() {
 
@@ -185,10 +247,16 @@ public sealed class GameApp : IDisposable {
 
     }
 
-    private void ResetScenario(Scenario scenario) {
+    private void ResetScenario(Scenario scenario, RocketPreset rocket) {
 
         _warp.Stop();
-        _scene.Reset(_world, scenario, _clock.UniversalTime);
+        _flight.Modes.DestroyAll(_world);
+
+        var craft = _scene.Spawn(_world, scenario, rocket, _clock.UniversalTime);
+
+        _predictor.Reset();
+        _camera.Retarget(0, craft, CraftDistance(rocket), 2);
+        _origin.ShiftTo(_world.Get<Transform>(craft).Position);
 
     }
 
@@ -208,6 +276,7 @@ public sealed class GameApp : IDisposable {
         var warmupFrames = -1L;
         var allocatedAfterWarmup = 0L;
         var captureFrames = 0;
+        var afterCapture = false;
 
         while (!_window.ShouldClose) {
 
@@ -220,13 +289,22 @@ public sealed class GameApp : IDisposable {
 
             var capturing = false;
 
+            if (smoke && warmupFrames >= 0) {
+
+                DriveSmokeScript();
+                CaptureAfterStaging();
+
+                capturing = _renderer.Capture.IsPending;
+
+            }
+
             if (smoke && warmupFrames >= 0 && _options.CaptureEvery > 0) {
 
                 var measured = _stats.FrameCount - warmupFrames;
 
                 if (measured % _options.CaptureEvery == 0 || measured == _options.SmokeFrames - 1) {
 
-                    _renderer.Capture.Request(Path.Combine(_options.CaptureDirectory, $"{_options.Scenario}-{measured:D6}.png"));
+                    _renderer.Capture.Request(Path.Combine(_options.CaptureDirectory, $"{_scene.Rocket.Id}-{_options.Scenario}-{measured:D6}.png"));
                     capturing = true;
 
                 }
@@ -262,8 +340,12 @@ public sealed class GameApp : IDisposable {
 
             }
 
-            // Capture frames copy pixels to managed memory on purpose; keep them out of the hot-path total.
-            if (capturing) {
+            // Captures copy pixels to managed memory on purpose (and spill into the next frame); keep them out of the total.
+            var excluded = capturing || afterCapture;
+
+            afterCapture = capturing;
+
+            if (excluded) {
 
                 captureFrames++;
 
@@ -288,11 +370,17 @@ public sealed class GameApp : IDisposable {
 
         _profile.ResetAllocations();
 
+        ref var control = ref _world.Get<CraftControl>(_scene.Craft);
+
+        control.Sas = _options.SmokeSas;
+
         if (_options.SmokeThrottle > 0) {
 
-            _world.Get<CraftControl>(_scene.Craft).Throttle = (float)_options.SmokeThrottle;
+            control.Throttle = (float)_options.SmokeThrottle;
 
         }
+
+        _pendingStages = _options.SmokeStages;
 
         var rates = _warp.RailsRates;
 
@@ -305,6 +393,84 @@ public sealed class GameApp : IDisposable {
             }
 
         }
+
+    }
+
+    // Issues one stage request at a time, and with auto-staging stages again once every lit engine has burned out.
+    private void DriveSmokeScript() {
+
+        var craft = _scene.Craft;
+
+        if (!_world.IsAlive(craft)) {
+
+            return;
+
+        }
+
+        ref var staging = ref _world.Get<CraftStaging>(craft);
+
+        if (staging.Requested || _clock.UniversalTime - _lastStageTime < AutoStageCooldown) {
+
+            return;
+
+        }
+
+        var stage = _pendingStages > 0;
+
+        if (!stage && _options.SmokeAutoStage && staging.NextStage < staging.StageCount) {
+
+            stage = !AnyEngineBurning(craft);
+
+        }
+
+        if (!stage) {
+
+            return;
+
+        }
+
+        staging.Requested = true;
+        _lastStageTime = _clock.UniversalTime;
+        _pendingStages = Math.Max(0, _pendingStages - 1);
+        _stageCaptures = 0;
+
+    }
+
+    // With captures enabled, also grab frames shortly after each stage so separations are on record.
+    private void CaptureAfterStaging() {
+
+        if (_options.CaptureEvery <= 0 || _stageCaptures >= StageCaptureDelays.Length || double.IsNegativeInfinity(_lastStageTime)) {
+
+            return;
+
+        }
+
+        if (_clock.UniversalTime - _lastStageTime < StageCaptureDelays[_stageCaptures]) {
+
+            return;
+
+        }
+
+        var stage = _world.IsAlive(_scene.Craft) ? _world.Get<CraftStaging>(_scene.Craft).NextStage : 0;
+
+        _renderer.Capture.Request(Path.Combine(_options.CaptureDirectory, $"{_scene.Rocket.Id}-{_options.Scenario}-stage{stage}-{_stageCaptures}.png"));
+        _stageCaptures++;
+
+    }
+
+    private bool AnyEngineBurning(Entity craft) {
+
+        foreach (var row in _world.Query<EngineState, Part>()) {
+
+            if (row.C2.Craft == craft && row.C1.IsBurning) {
+
+                return true;
+
+            }
+
+        }
+
+        return false;
 
     }
 
@@ -332,12 +498,18 @@ public sealed class GameApp : IDisposable {
 
         _systems.Run(SystemPhase.LateUpdate, _world, _clock.FrameTime);
 
-        _predictor.Update(_world.Get<OrbitState>(_scene.Craft), _clock.UniversalTime);
+        if (_world.IsAlive(_scene.Craft)) {
+
+            _predictor.Update(_world.Get<OrbitState>(_scene.Craft), _clock.UniversalTime);
+
+        }
+
         _camera.Update(_world);
         _origin.Update(_camera.TargetPosition);
 
         _lines.Clear();
         _orbitDraw.Draw(_clock.UniversalTime);
+        _craftDraw.Draw();
 
         var t1 = Stopwatch.GetTimestamp();
         var a1 = GC.GetAllocatedBytesForCurrentThread();
@@ -348,6 +520,10 @@ public sealed class GameApp : IDisposable {
         var a2 = GC.GetAllocatedBytesForCurrentThread();
 
         var capturing = _renderer.Capture.IsPending;
+        var excluded = capturing || _profileAfterCapture;
+
+        _profileAfterCapture = capturing;
+
         var size = _window.FramebufferSize;
         var aspect = size.Y > 0 ? (float)size.X / size.Y : 1.0f;
 
@@ -361,7 +537,7 @@ public sealed class GameApp : IDisposable {
         _profile.UiMs = (float)Stopwatch.GetElapsedTime(t1, t2).TotalMilliseconds;
         _profile.RenderMs = (float)Stopwatch.GetElapsedTime(t2, t3).TotalMilliseconds;
 
-        if (!capturing) {
+        if (!excluded) {
 
             _profile.Accumulate(a1 - a0, a2 - a1, a3 - a2);
 
@@ -391,7 +567,7 @@ public sealed class GameApp : IDisposable {
 
         }
 
-        if (_input.WasPressed(GlfwKey.Space)) {
+        if (_input.WasPressed(GlfwKey.P)) {
 
             _clock.Paused = !_clock.Paused;
 
@@ -419,14 +595,18 @@ public sealed class GameApp : IDisposable {
 
     private void LogSmokeSummary(long warmupFrames, long allocatedAfterWarmup, int captureFrames) {
 
-        var orbit = _world.Get<OrbitState>(_scene.Craft);
-        var body = _bodies[orbit.Body];
-
         Log.Info($"Smoke: {_stats.FrameCount} frames, avg {_stats.AverageMs:F2} ms ({_stats.Fps:F0} FPS), max {_stats.MaxMs:F2} ms");
-        Log.Info($"Smoke: after {warmupFrames} warmup frames ({SmokeWarmupSeconds} s), {_options.SmokeFrames - captureFrames} measured frames allocated {allocatedAfterWarmup} B on the main thread ({captureFrames} capture frames excluded)");
+        Log.Info($"Smoke: after {warmupFrames} warmup frames ({SmokeWarmupSeconds} s), {_options.SmokeFrames - captureFrames} measured frames allocated {allocatedAfterWarmup} B on the main thread ({captureFrames} capture and post-capture frames excluded)");
         Log.Info($"Smoke: allocations by section: sim {_profile.SimulationBytes} B, ui {_profile.UiBytes} B, render {_profile.RenderBytes} B");
-        Log.Info($"Smoke: UT {_clock.UniversalTime / 86400:F3} d, warp x{_warp.Rate:F0} ({_warp.Mode}), origin shifts {_origin.ShiftCount}");
-        Log.Info($"Smoke: craft around {body.Name}, altitude {(orbit.Current.Position.Length() - body.Radius) / 1000:F1} km, SOI transitions {_orbitEvents.TransitionCount}");
+        Log.Info($"Smoke: UT {_clock.UniversalTime / 86400:F3} d, warp x{_warp.Rate:F0} ({_warp.Mode}), time scale x{_clock.TimeScale:F1}, origin shifts {_origin.ShiftCount}");
+
+        if (_world.IsAlive(_scene.Craft)) {
+
+            LogCraft(_scene.Craft);
+
+        }
+
+        Log.Info($"Smoke: rigid bodies {_physics.BodyCount}, physics steps {_flight.RigidBodies.Steps}, frame shifts {_physicsFrame.ShiftCount}, stages fired {_flight.Staging.StageCount}, craft removed {_flight.Modes.CraftDestroyed}, SOI transitions {_orbitEvents.TransitionCount}");
 
         for (var i = _orbitEvents.RecentCount - 1; i >= 0; i--) {
 
@@ -440,7 +620,38 @@ public sealed class GameApp : IDisposable {
 
     }
 
+    private void LogCraft(Entity craft) {
+
+        var orbit = _world.Get<OrbitState>(craft);
+        var flight = _world.Get<FlightState>(craft);
+        var mass = _world.Get<CraftMass>(craft);
+        var staging = _world.Get<CraftStaging>(craft);
+        var body = _bodies[orbit.Body];
+        var elements = OrbitalElements.FromState(orbit.Current, body.GravitationalParameter);
+
+        Log.Info($"Smoke: {_scene.Rocket.Name} ({_scene.Scenario}) around {body.Name}, mode {flight.Mode}, stage {staging.NextStage}/{staging.StageCount}, mass {mass.Mass / 1000:F2} t");
+        Log.Info($"Smoke: altitude {flight.Altitude / 1000:F2} km, surface speed {flight.AirVelocity.Length():F1} m/s, inertial speed {orbit.Current.Velocity.Length():F1} m/s, Mach {flight.Mach:F2}, q {flight.DynamicPressure / 1000:F2} kPa, apoapsis {(elements.Apoapsis - body.Radius) / 1000:F1} km");
+
+        foreach (var row in _world.Query<EngineState, Part>()) {
+
+            if (row.C2.Craft != craft) {
+
+                continue;
+
+            }
+
+            var engine = row.C1;
+
+            Log.Info($"Smoke: engine {row.C2.Definition.Name}: {engine.Status} {engine.Fault}, thrust {engine.Thrust / 1000:F1} kN, Isp {engine.Isp:F1} s, ignitions left {engine.IgnitionsRemaining}");
+
+        }
+
+    }
+
     public void Dispose() {
+
+        _flight.Modes.DestroyAll(_world);
+        _physics.Dispose();
 
         _renderer.Dispose();
         _debugUi.Dispose();

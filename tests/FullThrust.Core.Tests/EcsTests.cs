@@ -93,6 +93,37 @@ public class EcsTests {
     }
 
     [Fact]
+    public void ReservedWorldAddsComponentsWithoutAllocating() {
+
+        var world = new World();
+
+        world.Store<A>();
+        world.Reserve(256);
+
+        var early = world.Create();
+
+        world.Add(early, new A());
+        world.Add(early, new B());
+
+        for (var i = 0; i < 100; i++) {
+
+            world.Create();
+
+        }
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var late = world.Create();
+
+        world.Add(late, new A { Value = 1 });
+        world.Add(late, new B());
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(1, world.Get<A>(late).Value);
+        Assert.True(world.Capacity >= 256);
+
+    }
+
+    [Fact]
     public void GetReturnsMutableReference() {
 
         var world = new World();

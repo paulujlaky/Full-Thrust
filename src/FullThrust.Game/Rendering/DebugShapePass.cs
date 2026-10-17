@@ -45,6 +45,9 @@ public sealed class DebugShapePass : IRenderPass {
         _meshes = new GpuMesh[Enum.GetValues<ShapeKind>().Length];
         _meshes[(int)ShapeKind.Box] = new GpuMesh(device, "DebugBox", MeshData.UnitBox());
         _meshes[(int)ShapeKind.Sphere] = new GpuMesh(device, "DebugSphere", MeshData.UnitSphere(96, 192));
+        _meshes[(int)ShapeKind.Cylinder] = new GpuMesh(device, "DebugCylinder", MeshData.UnitFrustum(0.5f, 32));
+        _meshes[(int)ShapeKind.Cone] = new GpuMesh(device, "DebugCone", MeshData.UnitFrustum(0, 32));
+        _meshes[(int)ShapeKind.Frustum] = new GpuMesh(device, "DebugFrustum", MeshData.UnitFrustum(0.22f, 32));
 
         _layout = device.CreatePipelineLayout([], [
 

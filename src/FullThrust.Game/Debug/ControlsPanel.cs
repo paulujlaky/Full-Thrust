@@ -17,11 +17,12 @@ public sealed class ControlsPanel : IDebugPanel {
 
             ImGui.BulletText("W/S pitch, A/D yaw, Q/E roll"u8);
             ImGui.BulletText("Shift/Ctrl throttle up/down, Z full, X cut"u8);
-            ImGui.BulletText("I/K J/L H/N translate"u8);
+            ImGui.BulletText("I/K J/L H/N translate (RCS on)"u8);
+            ImGui.BulletText("Space: stage, T: SAS, R: RCS"u8);
             ImGui.BulletText("Right mouse drag: orbit camera, wheel: zoom"u8);
             ImGui.BulletText("Tab: cycle camera focus (craft, Earth, Moon)"u8);
             ImGui.BulletText(". / , : time warp up/down, / : stop warp"u8);
-            ImGui.BulletText("Space: pause, F3: overlay, F12: screenshot, Esc: quit"u8);
+            ImGui.BulletText("P: pause, F3: overlay, F12: screenshot, Esc: quit"u8);
 
         }
 

@@ -12,6 +12,8 @@ public interface IComponentStore {
 
     bool Remove(Entity entity);
 
+    void Reserve(int entities);
+
 }
 
 public sealed class ComponentStore<T> : IComponentStore where T : struct {
@@ -142,6 +144,9 @@ public sealed class ComponentStore<T> : IComponentStore where T : struct {
         return slot >= 0 && _entities[slot] == entity ? slot : -1;
 
     }
+
+    // Sizes the entity lookup up front so adding components to new entities mid-game never grows it.
+    public void Reserve(int entities) => EnsureSparse(entities - 1);
 
     private void EnsureSparse(int index) {
 

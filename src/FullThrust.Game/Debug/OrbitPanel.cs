@@ -92,12 +92,6 @@ public sealed class OrbitPanel : IDebugPanel {
         ImGui.Text($"e {elements.Eccentricity:F5}  i {elements.Inclination * Rad:F3} deg");
         ImGui.Text($"LAN {elements.LongitudeOfAscendingNode * Rad:F2}  AoP {elements.ArgumentOfPeriapsis * Rad:F2}  nu {elements.TrueAnomaly * Rad:F2}");
 
-        if (radius < body.Radius) {
-
-            ImGui.TextColored(new float4(1, 0.4f, 0.3f, 1), "Below surface (no collision until Sprint 3)"u8);
-
-        }
-
     }
 
     private void DrawPrediction() {

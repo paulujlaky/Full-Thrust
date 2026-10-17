@@ -1,4 +1,3 @@
-using Brutal.Numerics;
 using FullThrust.Core.Simulation;
 
 namespace FullThrust.Core.Orbits;
@@ -41,14 +40,6 @@ public struct OrbitState {
         Version++;
 
     }
-
-}
-
-public struct ThrustAcceleration {
-
-    public double3 Linear;
-
-    public readonly bool IsThrusting => Linear != double3.Zero;
 
 }
 
