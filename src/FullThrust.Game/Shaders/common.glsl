@@ -126,9 +126,16 @@ vec3 EnvironmentRadiance(vec3 p, vec3 direction) {
 
     }
 
-    vec3 environment = HitsGround(origin, direction)
-        ? AtmosphereIrradiance(p, -origin / r) / PI
-        : SkyViewLuminance(origin, direction, frame.sunDirection.xyz) * frame.sunIlluminance.rgb;
+    vec3 up = origin / r;
+    float horizon = -sqrt(max(1.0 - BottomRadius() * BottomRadius() / (r * r), 0.0));
+    float mu = dot(direction, up);
+
+    // Just below the horizon the far surface is lost in sky-lit haze, so it fades to the ground over several degrees, not at an edge.
+    float below = smoothstep(0.0, 0.15, horizon - mu);
+    vec3 skyward = normalize(direction + up * max(horizon + 0.002 - mu, 0.0));
+    vec3 sky = SkyViewLuminance(origin, skyward, frame.sunDirection.xyz) * frame.sunIlluminance.rgb;
+
+    vec3 environment = mix(sky, AtmosphereIrradiance(p, -up) / PI, below);
 
     environment = environment * frame.groundIrradiance.w + vec3(0.6, 0.7, 1.0) * frame.ambientUp.w / PI;
 

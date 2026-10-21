@@ -28,6 +28,11 @@ OceanSurface Ocean(vec3 position, vec3 up, float time, float metresPerPixel) {
     float lostVariance = 0.0;
     float wavelength = 80.0;
 
+    // A slow field groups each train and bends its crests, so the crossing trains never settle into a lattice seen from above.
+    mat3 sway = mat3(0.36, 0.48, -0.80, -0.80, 0.60, 0.00, 0.48, 0.64, 0.60);
+    vec4 groups = texture(cloudNoise, sway * position * (1.0 / 211.0) + vec3(0.37, 0.11, 0.73));
+    vec3 warped = position + (texture(cloudNoise, sway * position * (1.0 / 67.0) + vec3(0.71, 0.29, 0.53)).gba - 0.5) * 8.0;
+
     for (int i = 0; i < WaveCount; i++) {
 
         vec3 random = WaveRandom(float(i) + 1.0);
@@ -39,9 +44,10 @@ OceanSurface Ocean(vec3 position, vec3 up, float time, float metresPerPixel) {
 
         // A wave needs about four pixels per wavelength to be drawn; below that only its slope variance remains.
         float resolved = 1.0 - smoothstep(0.15, 0.3, metresPerPixel / span);
-        float phase = dot(position, direction) * k - omega * time + random.y * 6.2831853;
+        float group = i % 3 == 0 ? groups.g : (i % 3 == 1 ? groups.b : groups.a);
+        float phase = dot(warped, direction) * k - omega * time + (random.y + groups.r * (1.0 + random.z)) * 6.2831853;
 
-        slope += direction * (WaveSteepness * cos(phase) * resolved);
+        slope += direction * (WaveSteepness * (0.3 + 1.4 * group) * cos(phase) * resolved);
         lostVariance += 0.5 * WaveSteepness * WaveSteepness * (1.0 - resolved);
 
         wavelength *= 0.72;
