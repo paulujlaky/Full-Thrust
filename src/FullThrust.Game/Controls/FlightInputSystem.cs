@@ -23,6 +23,9 @@ public sealed class FlightInputSystem : ISystem {
 
     public float ThrottleRate { get; set; } = 0.75f;
 
+    // Held on top of the keys, for scripted runs.
+    public float3 HeldTranslation { get; set; }
+
     public void Update(World world, in SimTime time) {
 
         var craft = _focus.Craft;
@@ -42,7 +45,7 @@ public sealed class FlightInputSystem : ISystem {
         control.Translation = new float3(
             _input.Axis(GlfwKey.J, GlfwKey.L),
             _input.Axis(GlfwKey.N, GlfwKey.H),
-            _input.Axis(GlfwKey.I, GlfwKey.K));
+            _input.Axis(GlfwKey.I, GlfwKey.K)) + HeldTranslation;
 
         var throttle = control.Throttle + _input.Axis(GlfwKey.LeftControl, GlfwKey.LeftShift) * ThrottleRate * (float)time.RealDeltaTime;
 

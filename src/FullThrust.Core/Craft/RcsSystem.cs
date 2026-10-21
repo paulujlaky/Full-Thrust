@@ -31,6 +31,7 @@ public sealed class RcsSystem : ISystem {
 
             rcs.Thrust = 0;
             rcs.MassFlow = 0;
+            rcs.Firing = 0;
 
             ref var flight = ref flights.Get(craft);
             ref var command = ref commands.Get(craft);
@@ -59,10 +60,11 @@ public sealed class RcsSystem : ISystem {
             var bodyForce = double3.Zero;
             var bodyTorque = double3.Zero;
             var totalLevel = 0.0;
+            var firing = 0u;
 
-            foreach (var nozzle in definition.Nozzles) {
+            for (var n = 0; n < definition.Nozzles.Length; n++) {
 
-                var direction = part.LocalRotation * nozzle;
+                var direction = part.LocalRotation * definition.Nozzles[n];
                 var torqueAxis = double3.NormalizeOrZero(double3.Cross(lever, direction));
                 var level = Math.Clamp(double3.Dot(direction, translationCommand) + double3.Dot(torqueAxis, rotationCommand), 0, 1);
 
@@ -74,6 +76,7 @@ public sealed class RcsSystem : ISystem {
 
                 totalLevel += level;
                 bodyForce += direction * level;
+                firing |= n < 32 ? 1u << n : 0;
 
             }
 
@@ -103,6 +106,7 @@ public sealed class RcsSystem : ISystem {
             craftForces.Torque += rotation * bodyTorque;
 
             rcs.MassFlow = massFlow * supply;
+            rcs.Firing = supply > 0 ? firing : 0;
             rcs.Thrust = totalLevel * thrustPerLevel;
             flight.Thrust += rcs.Thrust;
 

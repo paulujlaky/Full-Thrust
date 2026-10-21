@@ -19,6 +19,12 @@ public sealed class PlumeStyleData {
 
     public double[] Albedo { get; set; } = [0.5, 0.5, 0.5];
 
+    // Colour the cooler outer sheath shifts towards, as a multiplier of the core colour.
+    public double[] Sheath { get; set; } = [1.0, 0.55, 0.3];
+
+    // How far the hot core near the nozzle washes out towards white.
+    public double CoreWhiteness { get; set; } = 0.6;
+
 }
 
 public sealed class PlumeStylesData {
@@ -32,6 +38,8 @@ public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
 
     // Luminance of a brightness-1 plume core, in cd/m2; kerosene afterburning is about this bright.
     private const float CoreLuminance = 4.0e5f;
+
+    private const float PuffLength = 2.4f;
 
     private static readonly JsonSerializerOptions Options = new() {
 
@@ -127,6 +135,57 @@ public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
 
         }
 
+        AddPuffs(volumes, transforms);
+
+    }
+
+    // Firing RCS nozzles vent a short cone of propellant mist, seen by the sunlight it scatters.
+    private void AddPuffs(VolumeList volumes, ComponentStore<Transform> transforms) {
+
+        foreach (var row in _world.Query<RcsState, Part>()) {
+
+            ref readonly var rcs = ref row.C1;
+
+            if (rcs.Firing == 0) {
+
+                continue;
+
+            }
+
+            ref readonly var part = ref row.C2;
+            ref readonly var craft = ref transforms.Get(part.Craft);
+
+            var nozzles = rcs.Definition.Nozzles;
+
+            for (var n = 0; n < nozzles.Length && n < 32; n++) {
+
+                if ((rcs.Firing & (1u << n)) == 0) {
+
+                    continue;
+
+                }
+
+                var exhaust = -double3.Normalize(craft.Rotation * (part.LocalRotation * nozzles[n]));
+                var exit = _origin.ToLocal(craft.Position + craft.Rotation * part.LocalPosition + exhaust * (part.Definition.Radius * 0.8));
+                var axis = SpaceMath.ToFloat(exhaust);
+
+                volumes.Add(new VolumePrimitive {
+
+                    Kind = new int4((int)VolumeKind.Plume, 16, 2, 0),
+                    Position = new float4(exit + axis * (PuffLength * 0.5f), PuffLength),
+                    Axis = new float4(axis, PuffLength),
+                    Medium = new float4(0.92f, 0.92f, 0.92f, 70),
+                    Emission = new float4(0, 0, 0, 0.5f),
+                    Params0 = new float4(exit, 0.05f),
+                    Params1 = new float4(0.5f, 1, 0, 0),
+                    Params2 = new float4(1, 1, 1, 0),
+
+                });
+
+            }
+
+        }
+
     }
 
     // Where the exhaust strikes the ground it throws up a cloud of steam and dust, lit by the plume.
@@ -216,6 +275,7 @@ public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
             Emission = new float4(emission, 0.3f),
             Params0 = new float4(exit, exitRadius),
             Params1 = new float4(spread, diamondSpacing, diamonds, 0),
+            Params2 = new float4((float)style.Sheath[0], (float)style.Sheath[1], (float)style.Sheath[2], (float)style.CoreWhiteness),
 
         };
 

@@ -169,8 +169,11 @@ VolumeSample Plume(VolumePrimitive v, vec3 p) {
     float wave = 0.5 + 0.5 * cos(6.2831853 * x / spacing);
     float diamonds = v.params1.z * pow(wave, 6.0) * exp(-(r * r) / (0.36 * radius * radius)) * exp(-x / (spacing * 5.0));
 
-    vec3 hot = v.emission.rgb * (0.3 + 0.7 * exp(-x / (span * 0.25)));
+    // A white-hot core near the nozzle inside a cooler sheath; params2 holds the sheath colour and core whiteness.
     vec3 white = vec3(dot(v.emission.rgb, vec3(0.2126, 0.7152, 0.0722)));
+    float core = exp(-4.0 * (r * r) / (radius * radius)) * exp(-x / (span * 0.3));
+    vec3 tint = mix(vec3(1.0), v.params2.rgb, smoothstep(0.3, 1.0, r / radius));
+    vec3 hot = mix(v.emission.rgb * tint, white * 1.3, core * v.params2.w) * (0.3 + 0.7 * exp(-x / (span * 0.25)));
 
     s.extinction = density * v.medium.w;
     // Afterburning keeps the exhaust glowing as it spreads, so emission thins more slowly than mass.

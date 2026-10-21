@@ -106,7 +106,7 @@ public sealed class ScenarioPanel : IDebugPanel {
 
             var exhaust = _craftDraw.Enabled;
 
-            if (ImGui.Checkbox("Exhaust, RCS and airflow lines"u8, ref exhaust)) {
+            if (ImGui.Checkbox("Airflow lines"u8, ref exhaust)) {
 
                 _craftDraw.Enabled = exhaust;
 

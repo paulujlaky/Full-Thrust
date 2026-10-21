@@ -90,6 +90,8 @@ public sealed class GameOptions {
 
     public bool SmokeSas;
 
+    public float3 SmokeTranslation;
+
     public int CaptureEvery;
 
 }
@@ -495,6 +497,7 @@ public sealed class GameApp : IDisposable {
         ref var control = ref _world.Get<CraftControl>(_scene.Craft);
 
         control.Sas = _options.SmokeSas;
+        _flightInput.HeldTranslation = _options.SmokeTranslation;
 
         if (_options.SmokeThrottle > 0) {
 

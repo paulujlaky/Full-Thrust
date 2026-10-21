@@ -1,16 +1,14 @@
 using Brutal.Numerics;
 using FullThrust.Core.Craft;
 using FullThrust.Core.Ecs;
-using FullThrust.Core.Parts;
 using FullThrust.Core.Space;
 using FullThrust.Game.Rendering;
 
 namespace FullThrust.Game.Debug;
 
-// RCS puffs and the airflow vector; engine exhaust is drawn by PlumeSource.
+// The airflow vector; exhaust and RCS puffs are drawn by PlumeSource.
 public sealed class CraftDebugDraw {
 
-    private static readonly float4 Puff = new(0.9f, 0.95f, 1.0f, 1);
     private static readonly float4 Airflow = new(0.35f, 0.85f, 1.0f, 1);
 
     private readonly World _world;
@@ -30,23 +28,6 @@ public sealed class CraftDebugDraw {
         if (!Enabled) {
 
             return;
-
-        }
-
-        var transforms = _world.Store<Transform>();
-
-        foreach (var row in _world.Query<RcsState, Part>()) {
-
-            if (row.C1.Thrust <= 0) {
-
-                continue;
-
-            }
-
-            var position = transforms.Get(row.Entity).Position;
-            var up = transforms.Get(row.Entity).Rotation * double3.UnitX;
-
-            _lines.Line(position, position + up * 1.5, Puff);
 
         }
 

@@ -136,6 +136,9 @@ public struct RcsState {
     public double Thrust;
     public double MassFlow;
 
+    // Bit n set while nozzle n fires, for effects.
+    public uint Firing;
+
 }
 
 public struct DecouplerState {
