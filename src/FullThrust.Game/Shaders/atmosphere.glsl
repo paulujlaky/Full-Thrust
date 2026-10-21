@@ -197,6 +197,24 @@ struct ScatteringResult {
 
 };
 
+// One segment of length dt around p, added to a running integral.
+void ScatterStep(vec3 p, float dt, vec3 sunDirection, float rayleighPhase, float miePhase, inout ScatteringResult result) {
+
+    float r = length(p);
+    float sunCos = dot(sunDirection, p / r);
+
+    Medium m = SampleMedium(r - BottomRadius());
+    vec3 stepTransmittance = exp(-m.extinction * dt);
+
+    vec3 sun = Transmittance(r, sunCos) * SunVisibility(r, sunCos);
+    vec3 source = sun * (m.rayleighScattering * rayleighPhase + m.mieScattering * miePhase) + MultipleScattering(r, sunCos) * m.scattering;
+    vec3 integrated = (source - source * stepTransmittance) / max(m.extinction, vec3(1e-12));
+
+    result.luminance += result.transmittance * integrated;
+    result.transmittance *= stepTransmittance;
+
+}
+
 // In-scattered light along a ray, per unit of sun illuminance, with multiple scattering from the LUT.
 ScatteringResult IntegrateScattering(vec3 origin, vec3 direction, vec3 sunDirection, int samples, float maxDistance) {
 
@@ -240,21 +258,7 @@ ScatteringResult IntegrateScattering(vec3 origin, vec3 direction, vec3 sunDirect
 
     for (int i = 0; i < samples; i++) {
 
-        float t = start + (float(i) + 0.3) * dt;
-        vec3 p = origin + direction * t;
-        float r = length(p);
-        vec3 up = p / r;
-        float sunCos = dot(sunDirection, up);
-
-        Medium m = SampleMedium(r - BottomRadius());
-        vec3 stepTransmittance = exp(-m.extinction * dt);
-
-        vec3 sun = Transmittance(r, sunCos) * SunVisibility(r, sunCos);
-        vec3 source = sun * (m.rayleighScattering * rayleighPhase + m.mieScattering * miePhase) + MultipleScattering(r, sunCos) * m.scattering;
-        vec3 integrated = (source - source * stepTransmittance) / max(m.extinction, vec3(1e-12));
-
-        result.luminance += result.transmittance * integrated;
-        result.transmittance *= stepTransmittance;
+        ScatterStep(origin + direction * (start + (float(i) + 0.3) * dt), dt, sunDirection, rayleighPhase, miePhase, result);
 
     }
 
@@ -381,5 +385,98 @@ float AtmosphereWeight(vec3 worldPosition) {
     }
 
     return 1.0 - smoothstep(3.0, 6.0, length(PlanetRelative(worldPosition)) / TopRadius());
+
+}
+
+// Light scattered in front of a surface from high above, marched per pixel with steps crowding towards the dense air below.
+ScatteringResult MarchToSurface(vec3 origin, vec3 direction, float distance) {
+
+    const int Samples = 24;
+
+    ScatteringResult result;
+
+    result.luminance = vec3(0.0);
+    result.transmittance = vec3(1.0);
+
+    float near;
+    float far;
+
+    if (!RaySphere(origin, direction, TopRadius(), near, far) || far < 0.0) {
+
+        return result;
+
+    }
+
+    float start = max(near, 0.0);
+    float span = min(distance, far) - start;
+
+    if (span <= 0.0) {
+
+        return result;
+
+    }
+
+    float cosTheta = dot(direction, frame.sunDirection.xyz);
+    float rayleighPhase = RayleighPhase(cosTheta);
+    float miePhase = MiePhase(cosTheta);
+    float previous = 0.0;
+
+    for (int i = 1; i <= Samples; i++) {
+
+        float u = 1.0 - float(Samples - i) / float(Samples);
+        float t = 1.0 - (1.0 - u) * (1.0 - u) * (1.0 - u);
+        float dt = (t - previous) * span;
+
+        ScatterStep(origin + direction * (start + (previous + t) * 0.5 * span), dt, frame.sunDirection.xyz, rayleighPhase, miePhase, result);
+
+        previous = t;
+
+    }
+
+    return result;
+
+}
+
+vec3 FroxelAerialPerspective(vec3 radiance, float distance, vec2 fragCoord) {
+
+    float maxDistance = frame.aerialPerspective.x;
+    float slices = frame.aerialPerspective.y;
+
+    // Slice k ends at maxDistance * ((k + 1) / slices)^2, which puts its texel centre here.
+    float depth = sqrt(distance / maxDistance) - 0.5 / slices;
+    vec4 ap = texture(aerialPerspective, vec3(fragCoord * frame.viewport.zw, max(depth, 0.5 / slices)));
+
+    float first = maxDistance / (slices * slices);
+    float fade = clamp(distance / first, 0.0, 1.0);
+
+    return radiance * mix(1.0, ap.a, fade) + ap.rgb * fade * frame.sunIlluminance.rgb;
+
+}
+
+// Aerial perspective between the camera and a surface; radiance is before exposure. aerialPerspective.w picks the method.
+vec3 ApplyAerialPerspective(vec3 radiance, vec3 worldPosition, vec2 fragCoord) {
+
+    if (!AtmosphereEnabled() || frame.aerialPerspective.z < 0.5) {
+
+        return radiance;
+
+    }
+
+    vec3 offset = worldPosition - frame.cameraPosition.xyz;
+    float distance = length(offset);
+    float marched = frame.aerialPerspective.w;
+
+    vec3 froxel = marched < 1.0 ? FroxelAerialPerspective(radiance, distance, fragCoord) : radiance;
+
+    if (marched <= 0.0) {
+
+        return froxel;
+
+    }
+
+    ScatteringResult r = MarchToSurface(PlanetRelative(frame.cameraPosition.xyz), offset / distance, distance);
+    vec3 direct = radiance * r.transmittance + r.luminance * frame.sunIlluminance.rgb;
+
+    return mix(froxel, direct, marched);
 
 }

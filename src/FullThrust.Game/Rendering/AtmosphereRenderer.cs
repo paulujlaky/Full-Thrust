@@ -20,12 +20,21 @@ public struct AtmosphereUniforms {
     public float4 OzoneAbsorption;
     public float4 GroundAlbedo;
 
+    public float4 AerialPerspective;
+
 }
 
 // Lookup tables for the atmosphere of the body nearest the camera: static tables once per body, the sky view each frame.
 public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
 
     private const int GroupSize = 8;
+
+    private const int AerialWidth = 128;
+    private const int AerialHeight = 72;
+    private const int AerialSlices = 64;
+
+    private const double MarchFromAltitude = 30_000;
+    private const double MarchBlend = 10_000;
 
     private readonly DeviceEx _device;
     private readonly CelestialSystem _system;
@@ -39,10 +48,13 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
     private readonly Table _multiScatter;
     private readonly Table _irradiance;
     private readonly Table _skyView;
+    private readonly Table _aerialPerspective;
 
     private CelestialBody? _body;
     private CelestialBody? _built;
     private float3 _center;
+    private float _aerialDistance;
+    private float _marchWeight;
 
     public AtmosphereRenderer(DeviceEx device, ShaderLibrary shaders, FrameResources frames, CelestialSystem system, FloatingOrigin origin) {
 
@@ -62,12 +74,13 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
         }, null);
 
         _setLayout = Descriptors.CreateLayout(device, [Descriptors.Binding(0, VkDescriptorType.StorageImage, VkShaderStageFlags.ComputeBit)]);
-        _pool = Descriptors.CreatePool(device, 4, [new VkDescriptorPoolSize { Type = VkDescriptorType.StorageImage, DescriptorCount = 4 }]);
+        _pool = Descriptors.CreatePool(device, 5, [new VkDescriptorPoolSize { Type = VkDescriptorType.StorageImage, DescriptorCount = 5 }]);
 
         _transmittance = new Table(this, shaders, frames, "transmittance_lut.comp", "TransmittanceLut", 256, 64, GlobalBindings.TransmittanceLut);
         _multiScatter = new Table(this, shaders, frames, "multiscatter_lut.comp", "MultiScatterLut", 32, 32, GlobalBindings.MultiScatterLut);
         _irradiance = new Table(this, shaders, frames, "irradiance_lut.comp", "IrradianceLut", 64, 16, GlobalBindings.IrradianceLut);
         _skyView = new Table(this, shaders, frames, "skyview_lut.comp", "SkyViewLut", 192, 108, GlobalBindings.SkyViewLut);
+        _aerialPerspective = new Table(this, shaders, frames, "aerial_perspective.comp", "AerialPerspective", AerialWidth, AerialHeight, GlobalBindings.AerialPerspective, AerialSlices);
 
     }
 
@@ -114,6 +127,15 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
 
             _center = SpaceMath.ToFloat(_system.StateAt(best.Index, universalTime).Position - _origin.Origin);
 
+            // Far enough to reach the far edge of the atmosphere past the horizon.
+            var r = (camera - _system.StateAt(best.Index, universalTime).Position).Length();
+            var top = best.Radius + best.Atmosphere!.Scattering!.Height;
+
+            _aerialDistance = (float)(Math.Sqrt(Math.Max(r * r - best.Radius * best.Radius, 0)) + Math.Sqrt(top * top - best.Radius * best.Radius));
+
+            // Froxels lose the steep density gradient along long downward paths, so high cameras march per pixel.
+            _marchWeight = (float)Math.Clamp((r - best.Radius - MarchFromAltitude) / MarchBlend + 0.5, 0, 1);
+
         }
 
     }
@@ -141,6 +163,7 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
             MieExtinction = new float4(mieExtinction, mieExtinction, mieExtinction, 0),
             OzoneAbsorption = new float4(Vector(s.Ozone), (float)s.OzoneCenter),
             GroundAlbedo = new float4(Vector(s.GroundAlbedo), 0),
+            AerialPerspective = new float4(_aerialDistance, AerialSlices, 1, _marchWeight),
 
         };
 
@@ -156,6 +179,7 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
         _multiScatter.Prepare(cmd);
         _irradiance.Prepare(cmd);
         _skyView.Prepare(cmd);
+        _aerialPerspective.Prepare(cmd);
 
         if (_body is null || !Active) {
 
@@ -180,6 +204,7 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
         }
 
         _skyView.Dispatch(cmd, frame.FrameSet, GroupSize, 1);
+        _aerialPerspective.Dispatch(cmd, frame.FrameSet, GroupSize, 1);
         Barriers.ComputeToShaders(cmd);
 
     }
@@ -190,6 +215,7 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
         _multiScatter.Dispose();
         _irradiance.Dispose();
         _skyView.Dispose();
+        _aerialPerspective.Dispose();
 
         _device.DestroyDescriptorPool(_pool, null);
         _device.DestroyDescriptorSetLayout(_setLayout, null);
@@ -204,9 +230,9 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
         private readonly ComputeKernel _kernel;
         private readonly VkDescriptorSet _set;
 
-        public Table(AtmosphereRenderer owner, ShaderLibrary shaders, FrameResources frames, string shader, string name, int width, int height, int binding) {
+        public Table(AtmosphereRenderer owner, ShaderLibrary shaders, FrameResources frames, string shader, string name, int width, int height, int binding, int depth = 1) {
 
-            _texture = new RenderTexture(owner._device, name, VkFormat.R16G16B16A16SFloat, width, height);
+            _texture = new RenderTexture(owner._device, name, VkFormat.R16G16B16A16SFloat, width, height, depth);
             _kernel = new ComputeKernel(owner._device, shaders, shader, frames.SetLayout, owner._setLayout, ByteSize.Zero);
             _set = Descriptors.Allocate(owner._device, owner._pool, owner._setLayout);
 

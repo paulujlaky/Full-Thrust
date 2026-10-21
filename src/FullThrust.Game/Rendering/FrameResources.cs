@@ -52,6 +52,8 @@ public struct FrameUniforms {
 
     public AtmosphereUniforms Atmosphere;
 
+    public float4 Viewport;
+
 }
 
 // Descriptor set 0, shared by every scene pipeline: frame uniforms plus the textures any shader may sample.
@@ -64,9 +66,10 @@ public static class GlobalBindings {
     public const int MultiScatterLut = 4;
     public const int SkyViewLut = 5;
     public const int IrradianceLut = 6;
+    public const int AerialPerspective = 7;
 
     // Every binding after Frame is a combined image sampler; add new ones here and in common.glsl.
-    public const int Count = 7;
+    public const int Count = 8;
 
 }
 

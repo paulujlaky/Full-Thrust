@@ -332,6 +332,8 @@ public sealed class Renderer : IDisposable {
 
             Exposure = new float4(lighting.Exposure, lighting.Ev100, (float)lighting.Tonemapper, (float)(Seconds % 3600.0)),
 
+            Viewport = new float4(Swapchain.Extent.Width, Swapchain.Extent.Height, 1.0f / Swapchain.Extent.Width, 1.0f / Swapchain.Extent.Height),
+
         };
 
         Shadows.Update(view, projection, lighting.SunDirection);

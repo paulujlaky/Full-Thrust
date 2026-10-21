@@ -41,6 +41,12 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 ozoneAbsorption;
     vec4 groundAlbedo;
 
+    // x furthest distance, y slice count, z 1 when enabled.
+    vec4 aerialPerspective;
+
+    // Width, height and their reciprocals.
+    vec4 viewport;
+
 } frame;
 
 layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
@@ -49,6 +55,7 @@ layout(set = 0, binding = 3) uniform sampler2D transmittanceLut;
 layout(set = 0, binding = 4) uniform sampler2D multiScatterLut;
 layout(set = 0, binding = 5) uniform sampler2D skyViewLut;
 layout(set = 0, binding = 6) uniform sampler2D irradianceLut;
+layout(set = 0, binding = 7) uniform sampler3D aerialPerspective;
 
 const float PI = 3.14159265359;
 
@@ -288,7 +295,7 @@ float ScreenOcclusion(vec2 fragCoord, vec3 albedo) {
 }
 
 // The overlay can show the raw occlusion in place of the shaded scene.
-vec4 SceneOutput(vec3 radiance, vec2 fragCoord) {
+vec4 SceneOutput(vec3 radiance, vec3 worldPosition, vec2 fragCoord) {
 
     if (frame.aoParams.y > 0.5) {
 
@@ -296,6 +303,6 @@ vec4 SceneOutput(vec3 radiance, vec2 fragCoord) {
 
     }
 
-    return vec4(Expose(radiance), 1.0);
+    return vec4(Expose(ApplyAerialPerspective(radiance, worldPosition, fragCoord)), 1.0);
 
 }

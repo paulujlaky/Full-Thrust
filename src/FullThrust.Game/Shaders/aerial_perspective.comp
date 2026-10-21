@@ -1,0 +1,82 @@
+#version 450
+
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 1, binding = 0, rgba16f) uniform writeonly image3D target;
+
+const int StepsPerSlice = 2;
+
+// One thread per screen column marches its view ray once, storing in-scattering and mean transmittance at each slice end.
+void main() {
+
+    ivec3 size = imageSize(target);
+    ivec2 column = ivec2(gl_GlobalInvocationID.xy);
+
+    if (any(greaterThanEqual(column, size.xy))) {
+
+        return;
+
+    }
+
+    vec2 ndc = (vec2(column) + 0.5) / vec2(size.xy) * 2.0 - 1.0;
+    vec3 direction = ViewDirection(ndc);
+    vec3 origin = PlanetRelative(frame.cameraPosition.xyz);
+    vec3 sunDirection = frame.sunDirection.xyz;
+
+    float near;
+    float far;
+    bool inside = RaySphere(origin, direction, TopRadius(), near, far) && far > 0.0;
+
+    float enter = max(near, 0.0);
+
+    // Past the ground the integral holds its value, so surfaces between two slices interpolate towards their own depth.
+    float groundNear;
+    float groundFar;
+
+    if (RaySphere(origin, direction, BottomRadius(), groundNear, groundFar) && groundNear > 0.0) {
+
+        far = min(far, groundNear);
+
+    }
+    float maxDistance = frame.aerialPerspective.x;
+
+    float cosTheta = dot(direction, sunDirection);
+    float rayleighPhase = RayleighPhase(cosTheta);
+    float miePhase = MiePhase(cosTheta);
+
+    ScatteringResult result;
+
+    result.luminance = vec3(0.0);
+    result.transmittance = vec3(1.0);
+
+    float start = 0.0;
+
+    for (int k = 0; k < size.z; k++) {
+
+        float s = float(k + 1) / float(size.z);
+        float end = maxDistance * s * s;
+
+        float a = max(start, enter);
+        float b = min(end, far);
+
+        if (inside && b > a) {
+
+            float dt = (b - a) / float(StepsPerSlice);
+
+            for (int i = 0; i < StepsPerSlice; i++) {
+
+                ScatterStep(origin + direction * (a + (float(i) + 0.5) * dt), dt, sunDirection, rayleighPhase, miePhase, result);
+
+            }
+
+        }
+
+        imageStore(target, ivec3(column, k), vec4(result.luminance, dot(result.transmittance, vec3(1.0 / 3.0))));
+
+        start = end;
+
+    }
+
+}
