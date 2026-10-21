@@ -204,7 +204,7 @@ int ShadowCascade(float viewDepth) {
 
 }
 
-// 4x4 bilinear comparison taps: a smooth 5x5-texel tent around the receiver, scaled by the filter radius.
+// 3x3 bilinear comparison taps: a smooth 4x4-texel tent around the receiver, scaled by the filter radius.
 float SampleCascade(int cascade, vec3 worldPosition, vec3 normal) {
 
     vec3 offset = normal * frame.shadowTexel[cascade] * frame.shadowParams.y;
@@ -220,11 +220,11 @@ float SampleCascade(int cascade, vec3 worldPosition, vec3 normal) {
     vec2 texel = frame.shadowParams.z / vec2(textureSize(shadowMap, 0).xy);
     float sum = 0.0;
 
-    for (int y = 0; y < 4; y++) {
+    for (int y = 0; y < 3; y++) {
 
-        for (int x = 0; x < 4; x++) {
+        for (int x = 0; x < 3; x++) {
 
-            vec2 tap = uv + (vec2(x, y) - 1.5) * texel;
+            vec2 tap = uv + (vec2(x, y) - 1.0) * texel * 1.33;
 
             sum += texture(shadowMap, vec4(tap, float(cascade), clip.z));
 
@@ -232,7 +232,7 @@ float SampleCascade(int cascade, vec3 worldPosition, vec3 normal) {
 
     }
 
-    return sum / 16.0;
+    return sum / 9.0;
 
 }
 

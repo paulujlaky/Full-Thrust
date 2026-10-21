@@ -121,7 +121,8 @@ public sealed class TerrainMaterials : IDisposable {
             AddressModeV = VkSamplerAddressMode.Repeat,
             AddressModeW = VkSamplerAddressMode.Repeat,
             AnisotropyEnable = anisotropy > 1,
-            MaxAnisotropy = anisotropy,
+            // Every pixel takes up to a dozen triplanar fetches; 16x anisotropy cost a third of the frame for little gain.
+            MaxAnisotropy = Math.Min(anisotropy, 4.0f),
             MaxLod = 32,
 
         }, null);

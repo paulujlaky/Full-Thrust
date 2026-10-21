@@ -328,14 +328,16 @@ struct VolumeResult {
 // Marches one primitive between enter and exit, adding to the running result. Luminance is before exposure.
 void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, float exit, float jitter, inout VolumeResult result) {
 
-    // Clouds take no smaller steps than they need, which keeps short vertical paths cheap.
-    int steps = v.kind.x == VolumeCloudLayer ? clamp(int((exit - enter) / 60.0), 16, v.kind.y) : max(v.kind.y, 1);
+    float pixelAngle = 4.0 / (abs(frame.projection[1][1]) * frame.viewport.y);
+
+    // Clouds step no finer than they need: 60 m up close, about a pixel's footprint further away.
+    float stepLength = max(60.0, enter * pixelAngle * 0.35);
+    int steps = v.kind.x == VolumeCloudLayer ? clamp(int((exit - enter) / stepLength), 24, v.kind.y) : max(v.kind.y, 1);
     float dt = (exit - enter) / float(steps);
     vec3 sunDirection = frame.sunDirection.xyz;
     float cosTheta = dot(direction, sunDirection);
     float g = v.emission.w;
     vec3 albedo = v.medium.rgb;
-    float pixelAngle = 4.0 / (abs(frame.projection[1][1]) * frame.viewport.y);
 
     for (int i = 0; i < steps; i++) {
 

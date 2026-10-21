@@ -58,7 +58,7 @@ float ValueNoise(vec3 p, float period) {
 
 }
 
-// Ground variation below the mesh resolution, from 128 m down to 0.5 m; each octave fades once it is under a pixel.
+// Ground variation below the mesh resolution, from 128 m down to 4 m where detail textures take over; octaves fade under a pixel.
 float Detail(vec3 p) {
 
     float footprint = length(fwidth(p));
@@ -66,9 +66,16 @@ float Detail(vec3 p) {
     float amplitude = 0.5;
     float scale = 1.0 / 128.0;
 
-    for (int octave = 0; octave < 9; octave++) {
+    for (int octave = 0; octave < 6; octave++) {
 
         float fade = 1.0 - smoothstep(0.3, 1.0, footprint * scale);
+
+        // Octaves only get finer, so once one is below a pixel the rest are too.
+        if (fade <= 0.0) {
+
+            break;
+
+        }
 
         sum += (ValueNoise(p * scale, DetailPeriod * scale) - 0.5) * amplitude * fade;
         amplitude *= 0.75;
@@ -116,7 +123,7 @@ void main() {
 
         float w = weights[c];
 
-        if (layers[c] < 0 || w <= pickWeight[Picks - 1]) {
+        if (layers[c] < 0 || w < 0.04 || w <= pickWeight[Picks - 1]) {
 
             continue;
 

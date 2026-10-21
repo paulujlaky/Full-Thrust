@@ -51,6 +51,23 @@ public sealed class FrameTimingPanel : IDebugPanel {
             ImGui.Text($"{extent.Width}x{extent.Height}  {_renderer.Swapchain.PresentMode}");
             ImGui.Text($"Validation: {(_context.ValidationEnabled ? "on" : "off")}  Recreations: {_renderer.SwapchainRecreations}");
 
+            var profiler = _renderer.Profiler;
+
+            ImGui.SeparatorText("GPU passes"u8);
+            ImGui.Text($"Frame {profiler.FrameMs:F2} ms");
+
+            for (var i = 0; i < _renderer.Passes.Count && i < GpuProfiler.MaxScopes; i++) {
+
+                var pass = _renderer.Passes[i];
+
+                if (pass.Enabled) {
+
+                    ImGui.Text($"{pass.Name,-22} {profiler.ScopeMs(i):F3} ms");
+
+                }
+
+            }
+
         }
 
         ImGui.End();

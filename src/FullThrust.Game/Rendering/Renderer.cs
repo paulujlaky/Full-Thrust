@@ -48,6 +48,7 @@ public sealed class Renderer : IDisposable {
         AddPass(Shadows);
         AddPass(Prepass);
         Capture = new FrameCapture(context);
+        Profiler = new GpuProfiler(context);
 
         _commandPool = device.CreateCommandPool(new VkCommandPoolCreateInfo {
 
@@ -87,6 +88,8 @@ public sealed class Renderer : IDisposable {
     public SceneLighting Lighting { get; }
 
     public FrameCapture Capture { get; }
+
+    public GpuProfiler Profiler { get; }
 
     // Opaque and Transparent passes are built against this; Post and Overlay passes against Swapchain.RenderPass.
     public VkRenderPass SceneRenderPass => Hdr.OpaquePass;
@@ -161,6 +164,8 @@ public sealed class Renderer : IDisposable {
 
         device.WaitForFences([fence], true, -1);
 
+        Profiler.Collect(_frame);
+
         int imageIndex;
 
         try {
@@ -189,6 +194,8 @@ public sealed class Renderer : IDisposable {
 
         cmd.Reset(VkCommandBufferResetFlags.None);
         cmd.Begin(new VkCommandBufferBeginInfo { Flags = VkCommandBufferUsageFlags.OneTimeSubmitBit });
+
+        Profiler.BeginFrame(cmd, _frame);
 
         var extent = Swapchain.Extent;
         var frame = new FrameContext(cmd, _frame, extent, view, projection, Frames.Set(_frame));
@@ -238,6 +245,8 @@ public sealed class Renderer : IDisposable {
 
         }
 
+        Profiler.EndFrame(cmd, _frame);
+
         cmd.End();
 
         var renderFinished = _renderFinished[imageIndex];
@@ -268,7 +277,9 @@ public sealed class Renderer : IDisposable {
 
             if (pass.Enabled && pass.Stage >= first && pass.Stage <= last) {
 
+                Profiler.Begin(frame.CommandBuffer, frame.FrameIndex, i);
                 pass.Record(frame);
+                Profiler.End(frame.CommandBuffer, frame.FrameIndex, i);
 
             }
 
@@ -282,7 +293,9 @@ public sealed class Renderer : IDisposable {
 
             if (_passes[i].Enabled && _passes[i].Stage == stage) {
 
+                Profiler.Begin(frame.CommandBuffer, frame.FrameIndex, i);
                 _passes[i].Record(frame);
+                Profiler.End(frame.CommandBuffer, frame.FrameIndex, i);
 
             }
 
@@ -476,6 +489,7 @@ public sealed class Renderer : IDisposable {
         device.DestroyCommandPool(_commandPool, null);
 
         Capture.Dispose();
+        Profiler.Dispose();
         Frames.Dispose();
         Hdr.Dispose();
         Swapchain.Dispose();

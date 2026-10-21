@@ -25,6 +25,13 @@ string? Value(string name) {
 double Number(string name, double fallback) => Value(name) is { } text ? double.Parse(text, CultureInfo.InvariantCulture) : fallback;
 
 options.SmokeFrames = (int)Number("--frames", 0);
+
+if (Value("--window")?.Split('x') is [var width, var height]) {
+
+    options.WindowSize = new Brutal.Numerics.int2(int.Parse(width, CultureInfo.InvariantCulture), int.Parse(height, CultureInfo.InvariantCulture));
+
+}
+
 options.SmokeWarpRate = Number("--warp", 1);
 options.SmokeThrottle = Number("--throttle", 0);
 options.CaptureEvery = (int)Number("--capture-every", 0);

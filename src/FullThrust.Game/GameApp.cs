@@ -435,6 +435,7 @@ public sealed class GameApp : IDisposable {
 
                     warmupFrames = _stats.FrameCount;
                     _stats.ResetAllocationCounter();
+                    _renderer.Profiler.ResetAverages();
                     _profile.ResetAllocations();
 
                     BeginSmokeScript();
@@ -724,6 +725,21 @@ public sealed class GameApp : IDisposable {
             var e = _orbitEvents.Recent(i);
 
             Log.Info($"Smoke: transition at UT {e.Time / 86400:F4} d: {_bodies[e.FromBody].Name} -> {_bodies[e.ToBody].Name}");
+
+        }
+
+        var profiler = _renderer.Profiler;
+        var extent = _renderer.Swapchain.Extent;
+
+        Log.Info($"Smoke: GPU {extent.Width}x{extent.Height}, frame {profiler.AverageFrameMs:F2} ms");
+
+        for (var i = 0; i < _renderer.Passes.Count && i < GpuProfiler.MaxScopes; i++) {
+
+            if (profiler.AverageScopeMs(i) >= 0.01) {
+
+                Log.Info($"Smoke: GPU   {_renderer.Passes[i].Name}: {profiler.AverageScopeMs(i):F3} ms");
+
+            }
 
         }
 
