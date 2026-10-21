@@ -373,6 +373,16 @@ void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, fl
 
         }
 
+        // Point lights scatter isotropically, unshadowed.
+        for (int light = 0; light < int(frame.lightCount.x); light++) {
+
+            vec3 toLight = frame.lightPositions[light].xyz - p;
+            float distanceSquared = dot(toLight, toLight) + frame.lightPositions[light].w * frame.lightPositions[light].w;
+
+            ambient += frame.lightIntensities[light].rgb / distanceSquared / (4.0 * PI);
+
+        }
+
         vec3 source = albedo * s.extinction * (scattered + ambient) + s.emission;
         float stepTransmittance = exp(-s.extinction * dt);
         float extinction = max(s.extinction, 1e-6);

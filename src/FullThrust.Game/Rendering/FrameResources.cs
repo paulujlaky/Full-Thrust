@@ -14,6 +14,15 @@ public struct CascadeMatrices {
 
 }
 
+[InlineArray(MaxPointLights)]
+public struct LightVectors {
+
+    public const int MaxPointLights = 4;
+
+    private float4 _element;
+
+}
+
 // Mirrors the Frame block in Shaders/common.glsl (std140, so everything is a vec4 or mat4).
 [StructLayout(LayoutKind.Sequential)]
 public struct FrameUniforms {
@@ -57,6 +66,11 @@ public struct FrameUniforms {
     public float4 CloudShell;
     public float4 CloudWeather;
     public float4 CloudRotation;
+
+    // Point lights such as engine plumes: xyz position, w softening radius; rgb intensity in candela; x count.
+    public LightVectors LightPositions;
+    public LightVectors LightIntensities;
+    public float4 LightCount;
 
 }
 

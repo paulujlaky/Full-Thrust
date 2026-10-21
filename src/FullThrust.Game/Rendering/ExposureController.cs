@@ -16,6 +16,9 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
     // Reflected-light meter calibration (ISO 2720).
     private const double MeterConstant = 12.5;
 
+    // Share of the arithmetic mean luminance that the exposure must keep below white.
+    private const double MeanShare = 0.15;
+
     private readonly DeviceEx _device;
     private readonly HdrTarget _target;
     private readonly SceneLighting _lighting;
@@ -65,7 +68,7 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
 
         ]);
 
-        var size = ByteSize.Of<float2>(MaxGroups);
+        var size = ByteSize.Of<float4>(MaxGroups);
 
         for (var i = 0; i < Renderer.FramesInFlight; i++) {
 
@@ -164,14 +167,16 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
 
         }
 
-        var sums = MemoryMarshal.Cast<byte, float2>(_mapped[index].AsSpan<byte>())[.._groups[index]];
+        var sums = MemoryMarshal.Cast<byte, float4>(_mapped[index].AsSpan<byte>())[.._groups[index]];
         var total = 0.0;
         var weight = 0.0;
+        var linear = 0.0;
 
         foreach (var sum in sums) {
 
             total += sum.X;
             weight += sum.Y;
+            linear += sum.Z;
 
         }
 
@@ -181,7 +186,8 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
 
         }
 
-        var luminance = Math.Pow(2, total / weight);
+        // The log average suits ordinary scenes; a small bright source in the dark, like a night launch, pulls the arithmetic mean up instead.
+        var luminance = Math.Max(Math.Pow(2, total / weight), MeanShare * linear / weight);
 
         MeasuredLuminance = (float)luminance;
 

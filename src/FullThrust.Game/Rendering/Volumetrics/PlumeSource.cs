@@ -28,7 +28,7 @@ public sealed class PlumeStylesData {
 }
 
 // Exhaust plumes for every burning engine, shaped by its nozzle and the ambient pressure.
-public sealed class PlumeSource : IVolumeSource {
+public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
 
     // Luminance of a brightness-1 plume core, in cd/m2; kerosene afterburning is about this bright.
     private const float CoreLuminance = 4.0e5f;
@@ -46,6 +46,11 @@ public sealed class PlumeSource : IVolumeSource {
 
     // Indexed by fuel resource; null where no style is defined.
     private readonly PlumeStyleData?[] _styles;
+
+    private readonly float4[] _lightPositions = new float4[LightVectors.MaxPointLights];
+    private readonly float4[] _lightIntensities = new float4[LightVectors.MaxPointLights];
+
+    private int _lightCount;
 
     public PlumeSource(World world, FloatingOrigin origin, PartCatalog parts, string stylesFile) {
 
@@ -74,6 +79,7 @@ public sealed class PlumeSource : IVolumeSource {
         var flights = _world.Store<FlightState>();
 
         Count = 0;
+        _lightCount = 0;
 
         foreach (var row in _world.Query<EngineState, Part>()) {
 
@@ -88,18 +94,89 @@ public sealed class PlumeSource : IVolumeSource {
 
             ref readonly var craft = ref transforms.Get(part.Craft);
 
-            var ambient = flights.Has(part.Craft) ? flights.Get(part.Craft).Ambient.Pressure : 0;
+            var flight = flights.Has(part.Craft) ? flights.Get(part.Craft) : default;
 
             var exit = craft.Position + craft.Rotation * (part.LocalPosition - part.LocalRotation * new double3(0, part.Definition.Length / 2, 0));
             var axis = -double3.NormalizeOrZero(craft.Rotation * engine.ThrustDirection);
+            var plume = Describe(engine, part.Definition, style, _origin.ToLocal(exit), SpaceMath.ToFloat(axis), (float)flight.Ambient.Pressure);
 
-            if (volumes.Add(Describe(engine, part.Definition, style, _origin.ToLocal(exit), SpaceMath.ToFloat(axis), (float)ambient))) {
+            if (!volumes.Add(plume)) {
 
-                Count++;
+                continue;
 
             }
 
+            Count++;
+
+            var exitRadius = plume.Params0.W;
+            var length = plume.Axis.W;
+
+            // The brightest third of the plume, seen side on, as a point light at its middle.
+            if (_lightCount < LightVectors.MaxPointLights) {
+
+                var luminance = new float3(plume.Emission.X, plume.Emission.Y, plume.Emission.Z) * (2 * exitRadius);
+                var position = plume.Params0.XYZ + plume.Axis.XYZ * (length * 0.15f);
+
+                _lightPositions[_lightCount] = new float4(position, exitRadius * 2);
+                _lightIntensities[_lightCount] = new float4(luminance * (length * 0.3f * 2 * exitRadius), 0);
+                _lightCount++;
+
+            }
+
+            AddSteam(volumes, flight, craft.Position, exit, axis, exitRadius, length, (float)engine.Pump);
+
         }
+
+    }
+
+    // Where the exhaust strikes the ground it throws up a cloud of steam and dust, lit by the plume.
+    private void AddSteam(VolumeList volumes, in FlightState flight, double3 craftPosition, double3 exit, double3 axis, float exitRadius, float length, float throttle) {
+
+        if (flight.Gravity == double3.Zero) {
+
+            return;
+
+        }
+
+        var up = -double3.Normalize(flight.Gravity);
+        var down = -double3.Dot(axis, up);
+        var height = flight.SurfaceAltitude + double3.Dot(exit - craftPosition, up);
+
+        if (down < 0.3 || height <= 0 || height > length * 0.8) {
+
+            return;
+
+        }
+
+        var impact = exit + axis * (height / down);
+        var radius = exitRadius * (4 + 10 * (1 - (float)(height / length))) * throttle;
+        var center = impact + up * (radius * 0.4);
+
+        volumes.Add(new VolumePrimitive {
+
+            Kind = new int4((int)VolumeKind.NoiseSphere, 32, 4, 0),
+            Position = new float4(_origin.ToLocal(center), radius),
+            Axis = new float4(SpaceMath.ToFloat(up), 0),
+            Medium = new float4(0.8f, 0.78f, 0.75f, 0.12f),
+            Emission = new float4(0, 0, 0, 0.3f),
+            Params0 = new float4(radius * 0.6f, 0.37f, 0.11f, 0.73f),
+
+        });
+
+    }
+
+    public void Fill(ref FrameUniforms uniforms, bool enabled) {
+
+        var count = enabled && Visible ? _lightCount : 0;
+
+        for (var i = 0; i < count; i++) {
+
+            uniforms.LightPositions[i] = _lightPositions[i];
+            uniforms.LightIntensities[i] = _lightIntensities[i];
+
+        }
+
+        uniforms.LightCount = new float4(count, 0, 0, 0);
 
     }
 

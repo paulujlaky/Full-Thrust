@@ -52,6 +52,11 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 cloudWeather;
     vec4 cloudRotation;
 
+    // Point lights such as engine plumes: xyz position, w softening radius; rgb intensity in candela; x count.
+    vec4 lightPositions[4];
+    vec4 lightIntensities[4];
+    vec4 lightCount;
+
 } frame;
 
 layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
@@ -175,6 +180,23 @@ vec3 ShadeSurface(Surface s, vec3 p, vec3 n, vec3 v, float shadow) {
     vec3 irradiance = AmbientIrradiance(p, n);
     vec3 reflected = AmbientIrradiance(p, reflect(-v, n));
     vec3 ambient = ((1.0 - ambientF) * (1.0 - s.metallic) * s.albedo * irradiance + ambientF * mix(reflected, irradiance, roughness)) / PI;
+
+    for (int i = 0; i < int(frame.lightCount.x); i++) {
+
+        vec3 toLight = frame.lightPositions[i].xyz - p;
+        float distanceSquared = dot(toLight, toLight) + frame.lightPositions[i].w * frame.lightPositions[i].w;
+        vec3 pl = toLight * inversesqrt(max(dot(toLight, toLight), 1e-6));
+        vec3 ph = normalize(pl + v);
+        float pnl = max(dot(n, pl), 0.0);
+        vec3 pf = FresnelSchlick(max(dot(v, ph), 0.0), f0);
+        // A light the size of a plume blurs its highlight: widen roughness by its angular size (Karis 2013).
+        float pointRoughness = sqrt(clamp(roughness * roughness + frame.lightPositions[i].w * inversesqrt(distanceSquared) * 0.5, 0.0, 1.0));
+        vec3 pointSpecular = DistributionGgx(max(dot(n, ph), 0.0), pointRoughness) * VisibilitySmithGgx(nv, pnl, pointRoughness) * pf;
+        vec3 pointDiffuse = (1.0 - pf) * (1.0 - s.metallic) * s.albedo / PI;
+
+        direct += (pointDiffuse + pointSpecular) * frame.lightIntensities[i].rgb / distanceSquared * pnl;
+
+    }
 
     return direct + ambient * s.occlusion + s.emissive;
 

@@ -286,6 +286,11 @@ void main() {
 
     }
 
+    // Specular anti-aliasing: normals that vary within a pixel widen its highlight instead of sparkling.
+    vec3 normalChange = fwidth(n);
+
+    s.roughness = sqrt(clamp(s.roughness * s.roughness + min(dot(normalChange, normalChange) * 2.0, 0.4), 0.0, 1.0));
+
     s.occlusion *= ScreenOcclusion(gl_FragCoord.xy, s.albedo);
     s.albedo *= CascadeTint(vWorldPosition);
 

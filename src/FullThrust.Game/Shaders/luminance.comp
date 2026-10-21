@@ -6,7 +6,7 @@ layout(set = 0, binding = 0) uniform sampler2D hdr;
 
 layout(std430, set = 0, binding = 1) writeonly buffer Sums {
 
-    vec2 groups[];
+    vec4 groups[];
 
 } sums;
 
@@ -17,16 +17,16 @@ layout(push_constant) uniform Push {
 
 } pc;
 
-shared vec2 partial[256];
+shared vec4 partial[256];
 
-// Each workgroup covers 64x64 pixels, one sample per 4x4 block, and writes its sum of log2 luminance and weight.
+// Each workgroup covers 64x64 pixels, one sample per 4x4 block, and writes its weighted sums of log2 luminance and of luminance, and the weight.
 void main() {
 
     ivec2 size = ivec2(pc.params.xy);
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy) * 4 + 1;
     uint index = gl_LocalInvocationIndex;
 
-    vec2 value = vec2(0.0);
+    vec4 value = vec4(0.0);
 
     if (all(lessThan(pixel, size))) {
 
@@ -37,7 +37,7 @@ void main() {
         vec2 centred = (vec2(pixel) / vec2(size) - 0.5) * 2.0;
         float weight = 1.0 - 0.6 * min(dot(centred, centred), 1.0);
 
-        value = vec2(log2(max(luminance, 1e-4)) * weight, weight);
+        value = vec4(log2(max(luminance, 1e-4)) * weight, weight, luminance * weight, 0.0);
 
     }
 
