@@ -26,7 +26,7 @@ dotnet test
 dotnet run --project src/FullThrust.Game
 ```
 
-Flags: `--no-vsync`, `--no-validation`, `--no-overlay`, `--rocket pinnacle|harrier|colossus`, `--scenario launchpad|lowOrbit|lunarTransfer`, `--focus N` (0 craft, 1 Earth, 2 Moon), `--camera-distance M`, `--camera-pitch DEG`, `--camera-yaw DEG`, `--time-scale X`. For inspecting visuals, `--headlight` lights the scene from over the camera's shoulder and `--terrain-levels` tints terrain chunks by LOD level (both also in the overlay).
+Flags: `--no-vsync`, `--no-validation`, `--no-overlay`, `--rocket pinnacle|harrier|colossus`, `--scenario launchpad|lowOrbit|lunarTransfer`, `--focus N` (0 craft, 1 Earth, 2 Moon), `--camera-distance M`, `--camera-pitch DEG`, `--camera-yaw DEG`, `--time-scale X`. `--camera-site LAT,LON,ALT` pins the camera that many metres above a place on the focused body (aimed with `--camera-yaw` and `--camera-pitch`), and the orbit camera otherwise stays above the ground. For inspecting visuals, `--headlight` lights the scene from over the camera's shoulder and `--terrain-levels` tints terrain chunks by LOD level (both also in the overlay).
 
 Smoke tests: `--frames N` measures N frames after a 3 s warmup, logs timing, allocation, flight and SOI-transition stats, then exits. It also logs the mean GPU time of the frame and of every render pass (timestamp queries; the overlay's Frame Timing panel shows them live), and `--window WxH` sets the window size, e.g. `--window 2560x1440` for checking the 60 FPS target at 1440p. Add `--warp RATE`, `--throttle T`, `--stage N` (stage commands at start), `--auto-stage` (stage whenever every engine has burned out), `--sas` and `--capture-every K` (PNGs to `captures/`, or `--capture-dir`; frames just after each stage are captured too) for scripted visual checks, e.g.
 
@@ -55,7 +55,7 @@ Planet and Moon surfaces are procedural, double-precision height fields defined 
 
 Up close, terrain blends detail materials over the palette colours: each body maps its palette channels (lowland, dry, rock, snow and so on) to CC0 texture sets under `data/textures/terrain` (see its NOTICE), sampled triplanar in the body-fixed frame at two tiling scales and height-blended between the three heaviest channels. Detail is normalised to each texture's mean colour, so it fades back to the palette at a distance. Each sample blends two shifted copies of its tile, picked by noise, so the tile grid never forms a lattice.
 
-Oceans are drawn on the sea-level surface of the terrain: ten deep-water waves animated by the dispersion relation, with waves too small to resolve folded into roughness so the sun glint holds from orbit. The sea bed shows through the shallows, absorbed red first, and the shore gets wet sand and surf.
+Oceans are drawn on the sea-level surface of the terrain: twelve wind-driven deep-water wave trains animated by the dispersion relation, with drifting noise for the capillary ripples, with waves too small to resolve folded into roughness so the sun glint holds from orbit. The sea bed shows through the shallows, absorbed red first, and the shore gets wet sand and surf.
 
 ## License
 The license is the [Unlicense](https://unlicense.org/), which allows for free use, modification, and distribution of the software.

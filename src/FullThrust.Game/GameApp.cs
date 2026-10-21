@@ -67,6 +67,9 @@ public sealed class GameOptions {
     // Puts a ball of smoke beside the camera target.
     public bool DebugVolume;
 
+    // "latitude,longitude,altitude" pins the camera above that place; --camera-yaw and --camera-pitch aim it.
+    public string? CameraSite;
+
     // Replaces the shaded scene with a debug view for captures: "ao" or "cascades".
     public string? DebugView;
 
@@ -102,6 +105,9 @@ public sealed class GameApp : IDisposable {
 
     // Sim seconds to wait after a stage before the smoke script may stage again.
     private const double AutoStageCooldown = 2.0;
+
+    // Metres the orbit camera keeps above the ground.
+    private const double CameraClearance = 2.0;
 
     private static readonly double[] StageCaptureDelays = [0.5, 2.0];
 
@@ -162,9 +168,19 @@ public sealed class GameApp : IDisposable {
     private int _stageCaptures;
     private bool _profileAfterCapture;
 
+    // Latitude and longitude in degrees and metres above the ground, from --camera-site.
+    private readonly double3? _site;
+
     public GameApp(GameOptions options) {
 
         _options = options;
+
+        if (options.CameraSite?.Split(',') is [var latitude, var longitude, var height]) {
+
+            _site = new double3(double.Parse(latitude, CultureInfo.InvariantCulture), double.Parse(longitude, CultureInfo.InvariantCulture), double.Parse(height, CultureInfo.InvariantCulture));
+
+        }
+
         _clock = new SimulationClock(_warp) { TimeScale = options.TimeScale };
         _world.Reserve(ReservedEntities);
 
@@ -611,7 +627,8 @@ public sealed class GameApp : IDisposable {
         }
 
         _camera.Update(_world);
-        _origin.Update(_camera.TargetPosition);
+        PlaceCamera();
+        _origin.Update(_site is null ? _camera.TargetPosition : _camera.Camera.Position);
 
         _lines.Clear();
         _orbitDraw.Draw(_clock.UniversalTime);
@@ -655,6 +672,48 @@ public sealed class GameApp : IDisposable {
         }
 
         _input.EndFrame();
+
+    }
+
+    // The debug site pins the camera above a place on the ground; otherwise the orbit camera is kept out of the terrain.
+    private void PlaceCamera() {
+
+        var camera = _camera.Camera;
+        var time = _clock.UniversalTime;
+        var body = _bodies.DominantBodyAt(_camera.TargetPosition, time);
+        var center = _bodies.StateAt(body.Index, time).Position;
+
+        if (_site is { } site) {
+
+            var direction = CelestialSystem.BodyFixedPoint(body, site.X * Math.PI / 180, site.Y * Math.PI / 180, 0) / body.Radius;
+            var ground = body.Terrain is { } terrain ? Math.Max(terrain.Height(direction), terrain.HasOcean ? 0 : double.MinValue) : 0;
+
+            camera.Position = _bodies.BodyFixedToWorld(body.Index, direction * (body.Radius + ground + site.Z), time).Position;
+
+            var up = double3.Normalize(camera.Position - center);
+            var axis = body.RotationAt(time) * double3.UnitY;
+            var east = double3.Normalize(double3.Cross(axis, up));
+            var north = double3.Cross(up, east);
+            var yaw = double.IsNaN(_options.CameraYaw) ? 0 : _options.CameraYaw * Math.PI / 180;
+            var pitch = double.IsNaN(_options.CameraPitch) ? 0 : _options.CameraPitch * Math.PI / 180;
+            var forward = (north * Math.Cos(yaw) + east * Math.Sin(yaw)) * Math.Cos(pitch) + up * Math.Sin(pitch);
+
+            camera.Rotation = OrbitCameraRig.LookRotation(forward, up);
+
+            return;
+
+        }
+
+        var altitude = _bodies.SurfaceAltitude(body.Index, camera.Position, time);
+
+        if (altitude < CameraClearance) {
+
+            var radial = double3.Normalize(camera.Position - center);
+
+            camera.Position += radial * (CameraClearance - altitude);
+            camera.Rotation = OrbitCameraRig.LookRotation(double3.Normalize(_camera.TargetPosition - camera.Position), radial);
+
+        }
 
     }
 
