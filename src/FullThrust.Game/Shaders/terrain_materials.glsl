@@ -41,8 +41,7 @@ vec2 TileOffset(float index) {
 
 }
 
-// One projection plane. A variant of zero or more blends two copies of the tile shifted by offsets that change
-// with a smooth noise index, so the tile grid never shows. Explicit gradients keep mip selection continuous.
+// One plane; a non-negative variant blends two noise-picked tile offsets so the grid never shows.
 void SamplePlane(int layer, vec2 uv, vec2 gx, vec2 gy, float variant, out vec4 albedo, out vec4 surface) {
 
     if (variant < 0.0) {
@@ -65,8 +64,7 @@ void SamplePlane(int layer, vec2 uv, vec2 gx, vec2 gy, float variant, out vec4 a
 
 }
 
-// Triplanar projection in the body-fixed frame; normals use the UDN blend of each plane's tangent-space xy.
-// Planes with almost no weight are skipped, which on gentle terrain leaves one.
+// Triplanar in the body-fixed frame with UDN normals; near-zero planes are skipped.
 DetailSample SampleDetail(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend, float scale, float angle, float variant) {
 
     mat2 r = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));

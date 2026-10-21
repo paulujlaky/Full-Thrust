@@ -3,8 +3,7 @@ using Brutal.VulkanApi;
 
 namespace FullThrust.Game.Rendering;
 
-// Frame order. Stages named After* or Prepare/PostProcess run outside any render pass, so passes there
-// record their own render passes or compute; the others run inside the render pass the renderer opens.
+// Frame order; Prepare, After* and PostProcess run outside any render pass.
 public enum RenderStage {
 
     // Shadow maps, lookup tables and other work the scene samples.

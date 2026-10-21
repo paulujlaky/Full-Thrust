@@ -53,8 +53,7 @@ public sealed class TerrainPalette {
 
     public float4 Surface(in TerrainSample sample, double3 direction, float slope) => Surface(sample, direction, slope, out _);
 
-    // Ground (or sea bed) albedo and roughness; the shader draws water over it. Slope is 1 - cos(tilt).
-    // Weights give each channel's share of the colour, so detail materials can follow it.
+    // Ground albedo and roughness plus each channel's share of it; slope is 1 - cos(tilt).
     public float4 Surface(in TerrainSample sample, double3 direction, float slope, out TerrainWeights weights) {
 
         if (_cratered) {

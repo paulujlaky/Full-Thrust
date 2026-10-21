@@ -3,8 +3,7 @@ using Brutal.VulkanApi.Abstractions;
 
 namespace FullThrust.Game.Rendering;
 
-// A 2D or 3D image that compute shaders write and other shaders sample. It lives in the General layout,
-// entered once by Prepare after each (re)creation.
+// A compute-written, shader-sampled image kept in the General layout.
 public sealed class RenderTexture : IDisposable {
 
     private readonly DeviceEx _device;

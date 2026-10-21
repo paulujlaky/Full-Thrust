@@ -14,8 +14,9 @@ public sealed class RenderingPanel : IDebugPanel {
     private readonly SceneLighting _lighting;
     private readonly ShadowMaps _shadows;
     private readonly AmbientOcclusion _occlusion;
+    private readonly BackgroundPass _background;
 
-    public RenderingPanel(TerrainRenderer terrain, MeshPass meshes, ModelLibrary models, SceneLighting lighting, ShadowMaps shadows, AmbientOcclusion occlusion) {
+    public RenderingPanel(TerrainRenderer terrain, MeshPass meshes, ModelLibrary models, SceneLighting lighting, ShadowMaps shadows, AmbientOcclusion occlusion, BackgroundPass background) {
 
         _terrain = terrain;
         _meshes = meshes;
@@ -23,12 +24,43 @@ public sealed class RenderingPanel : IDebugPanel {
         _lighting = lighting;
         _shadows = shadows;
         _occlusion = occlusion;
+        _background = background;
 
     }
 
     public string Title => "Rendering";
 
     public bool Visible { get; set; } = true;
+
+    private void DrawBackground() {
+
+        ImGui.SeparatorText("Sky"u8);
+
+        var stars = _background.StarBrightness;
+
+        if (ImGui.SliderFloat("Star brightness"u8, ref stars, 1.0f, 100000.0f, "%.0fx"u8, ImGuiSliderFlags.Logarithmic)) {
+
+            _background.StarBrightness = stars;
+
+        }
+
+        var galaxy = _background.MilkyWayBrightness;
+
+        if (ImGui.SliderFloat("Milky Way"u8, ref galaxy, 0.0f, 100000.0f, "%.0fx"u8, ImGuiSliderFlags.Logarithmic)) {
+
+            _background.MilkyWayBrightness = galaxy;
+
+        }
+
+        var faintest = _background.FaintestMagnitude;
+
+        if (ImGui.SliderFloat("Faintest magnitude"u8, ref faintest, 2.0f, 10.0f, "%.1f"u8)) {
+
+            _background.FaintestMagnitude = faintest;
+
+        }
+
+    }
 
     private void DrawOcclusion() {
 
@@ -187,6 +219,7 @@ public sealed class RenderingPanel : IDebugPanel {
 
         DrawShadows();
         DrawOcclusion();
+        DrawBackground();
 
         ImGui.SeparatorText("Meshes"u8);
         ImGui.Text($"Models {_models.ModelCount}  draw calls {_meshes.DrawCount}");

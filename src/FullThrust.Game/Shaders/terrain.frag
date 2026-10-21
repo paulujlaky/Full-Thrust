@@ -169,8 +169,7 @@ void main() {
 
             samples[i] = SampleLayered(layers[pick[i]], vDetail, detailDx, detailDy, blend, scales[pick[i]], metresPerPixel, variant, levelFade);
             fade = max(fade, levelFade);
-            // Heights are centred on each texture's mean so no material wins transitions on average.
-            // Only the fine level sharpens transitions: coarse heights would print the tile pattern across the landscape.
+            // Mean-centred heights sharpen transitions, at the fine level only so tiles never print.
             float contrast = 0.6 * TileFade(metresPerPixel, scales[pick[i]]);
             float breakup = (ValueNoise(vDetail * (1.0 / 32.0) + float(pick[i]) * 17.0, DetailPeriod / 32.0) - 0.5) * 0.5;
 

@@ -1,5 +1,4 @@
-// Open-ocean surface: deep-water waves in the body-fixed frame, animated by the dispersion relation.
-// Waves too small to resolve at this distance are folded into roughness, so the sun glint survives from orbit.
+// Deep-water waves; unresolved ones fold into roughness so the glint survives from orbit.
 
 const int WaveCount = 10;
 

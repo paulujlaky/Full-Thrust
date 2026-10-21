@@ -4,8 +4,7 @@ using Brutal.VulkanApi.Abstractions;
 
 namespace FullThrust.Game.Rendering;
 
-// Cascaded shadow maps for the sun. Each cascade bounds a slice of the view frustum with a sphere, so its size
-// never changes as the camera turns, and snaps to whole texels in light space, so edges do not crawl as it moves.
+// Sun cascades bounded by spheres and texel-snapped, so edges hold still as the camera turns and moves.
 public sealed class ShadowMaps : IRenderPass, IFrameUniformsWriter {
 
     public const int MaxCascades = 4;

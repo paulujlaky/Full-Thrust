@@ -48,8 +48,7 @@ public struct TerrainBodyArray {
 
 }
 
-// Detail textures for every terrain body: albedo with height in alpha, and normal xy, roughness and occlusion,
-// each as one texture array shared by all bodies, plus per-body uniforms mapping palette channels to layers.
+// Per-body detail texture arrays and uniforms mapping palette channels to layers.
 public sealed class TerrainMaterials : IDisposable {
 
     public const int MaxBodies = 4;

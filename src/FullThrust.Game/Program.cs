@@ -40,6 +40,7 @@ options.SmokeSas = args.Contains("--sas");
 options.Headlight = args.Contains("--headlight");
 options.ShowTerrainLevels = args.Contains("--terrain-levels");
 options.DebugView = Value("--debug-view");
+options.Ev100 = Number("--ev100", double.NaN);
 options.Rocket = Value("--rocket");
 
 if (Value("--scenario") is { } scenario) {

@@ -16,8 +16,7 @@ public struct AttachmentDesc {
 
 }
 
-// Single-subpass render passes whose external dependencies cover every stage that reads or writes the
-// attachments around them (fragment and compute sampling, attachment writes), so stages can be reordered freely.
+// Single-subpass render passes with broad external dependencies, so stages can be reordered freely.
 public static class RenderPasses {
 
     private const VkPipelineStageFlags Stages = VkPipelineStageFlags.ComputeShaderBit | VkPipelineStageFlags.FragmentShaderBit | VkPipelineStageFlags.EarlyFragmentTestsBit | VkPipelineStageFlags.LateFragmentTestsBit | VkPipelineStageFlags.ColorAttachmentOutputBit | VkPipelineStageFlags.TransferBit;

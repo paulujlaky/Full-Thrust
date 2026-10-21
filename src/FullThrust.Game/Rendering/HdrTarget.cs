@@ -3,8 +3,7 @@ using Brutal.VulkanApi.Abstractions;
 
 namespace FullThrust.Game.Rendering;
 
-// Linear HDR colour and depth the scene passes draw into; the tonemap pass resolves it to the swapchain.
-// Between render passes depth rests in DepthStencilReadOnlyOptimal and colour in ShaderReadOnlyOptimal, so both can be sampled.
+// Linear HDR colour and depth; between passes both rest in sampleable layouts.
 public sealed class HdrTarget : IDisposable {
 
     public const VkFormat ColorFormat = VkFormat.R16G16B16A16SFloat;
