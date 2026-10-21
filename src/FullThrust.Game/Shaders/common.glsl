@@ -190,6 +190,10 @@ struct Surface {
     // Normal-incidence reflectance of a dielectric: 0.04 for most, 0.02 for water.
     float reflectance;
 
+    // The smooth surface beneath any normal map, and the sine of the light elevation below which its relief hides it from point lights.
+    vec3 geometricNormal;
+    float relief;
+
 };
 
 // Cook-Torrance GGX under the sun plus a hemisphere ambient; returns radiance before exposure.
@@ -234,7 +238,11 @@ vec3 ShadeSurface(Surface s, vec3 p, vec3 n, vec3 v, float shadow) {
         vec3 pointSpecular = DistributionGgx(max(dot(n, ph), 0.0), pointRoughness) * VisibilitySmithGgx(nv, pnl, pointRoughness) * pf;
         vec3 pointDiffuse = (1.0 - pf) * (1.0 - s.metallic) * s.albedo / PI;
 
-        direct += (pointDiffuse + pointSpecular) * frame.lightIntensities[i].rgb / distanceSquared * pnl;
+        // Unshadowed lights still cannot reach below the surface they skim, nor past the relief of rough ground.
+        float skim = dot(s.geometricNormal, pl);
+        float exposed = s.relief > 0.0 ? smoothstep(0.0, s.relief, skim) : step(0.0, skim);
+
+        direct += (pointDiffuse + pointSpecular) * frame.lightIntensities[i].rgb / distanceSquared * pnl * exposed;
 
     }
 

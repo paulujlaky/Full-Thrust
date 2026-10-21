@@ -258,6 +258,10 @@ void main() {
     s.occlusion = mix(1.0, occlusion, detail);
     s.emissive = vec3(0.0);
     s.reflectance = 0.04;
+    s.geometricNormal = normalize(vNormal);
+
+    // Grass, stones and soil hide the ground from a light skimming in below about ten degrees.
+    s.relief = 0.18;
 
     if (detail > 0.0) {
 
@@ -302,6 +306,7 @@ void main() {
         s.roughness = mix(water.roughness, 0.8, foam);
         s.occlusion = 1.0;
         s.reflectance = 0.02;
+        s.relief = 0.0;
         n = normalize(toWorld * water.normal);
 
     }

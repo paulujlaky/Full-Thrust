@@ -73,6 +73,9 @@ void main() {
 
     vec3 geometric = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
 
+    s.geometricNormal = geometric;
+    s.relief = 0.0;
+
     s.occlusion *= ScreenOcclusion(gl_FragCoord.xy, s.albedo);
     s.albedo *= CascadeTint(vWorldPosition);
 

@@ -38,6 +38,8 @@ void main() {
     s.occlusion = 1.0;
     s.emissive = vec3(0.0);
     s.reflectance = 0.04;
+    s.geometricNormal = n;
+    s.relief = 0.0;
 
     outColor = vec4(Expose(ShadeSurface(s, vWorldPosition, n, v, 1.0)), 1.0);
 
