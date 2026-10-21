@@ -42,6 +42,7 @@ options.ShowTerrainLevels = args.Contains("--terrain-levels");
 options.DebugView = Value("--debug-view");
 options.Ev100 = Number("--ev100", double.NaN);
 options.Sun = Value("--sun");
+options.DebugVolume = args.Contains("--debug-volume");
 options.Rocket = Value("--rocket");
 
 if (Value("--scenario") is { } scenario) {

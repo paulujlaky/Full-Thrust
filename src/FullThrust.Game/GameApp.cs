@@ -17,6 +17,7 @@ using FullThrust.Game.Controls;
 using FullThrust.Game.Debug;
 using FullThrust.Game.Platform;
 using FullThrust.Game.Rendering;
+using FullThrust.Game.Rendering.Volumetrics;
 using FullThrust.Game.Scene;
 using FullThrust.Game.Terrain;
 using FullThrust.Physics.Jolt;
@@ -62,6 +63,9 @@ public sealed class GameOptions {
 
     // "azimuth,elevation" in degrees relative to the local horizon.
     public string? Sun;
+
+    // Puts a ball of smoke beside the camera target.
+    public bool DebugVolume;
 
     // Replaces the shaded scene with a debug view for captures: "ao" or "cascades".
     public string? DebugView;
@@ -117,6 +121,7 @@ public sealed class GameApp : IDisposable {
     private AmbientOcclusion? _occlusion;
     private BackgroundPass? _background;
     private AtmosphereRenderer? _atmosphere;
+    private VolumetricRenderer? _volumetrics;
 
     private readonly World _world = new();
     private readonly SystemScheduler _systems = new();
@@ -304,6 +309,16 @@ public sealed class GameApp : IDisposable {
         _renderer.AddPass(_background);
         _atmosphere = new AtmosphereRenderer(_vulkan.Device, shaders, _renderer.Frames, _bodies, _origin);
         _renderer.AddPass(_atmosphere);
+
+        _volumetrics = new VolumetricRenderer(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames);
+        _renderer.AddPass(_volumetrics);
+        _renderer.AddPass(_volumetrics.CompositePass);
+
+        if (_options.DebugVolume) {
+
+            _volumetrics.AddSource(new DebugVolumeSource(() => _camera.TargetPosition, () => _clock.UniversalTime, _origin));
+
+        }
 
         _occlusion = new AmbientOcclusion(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames) { ShowOcclusion = _options.DebugView == "ao" };
         _renderer.Shadows.ShowCascades = _options.DebugView == "cascades";
