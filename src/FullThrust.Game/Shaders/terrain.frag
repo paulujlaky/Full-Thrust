@@ -93,6 +93,34 @@ vec3 SrgbToLinear(vec3 c) {
 
 }
 
+// Night-side city lights in cd/m2: settled regions a thousand kilometres across, metros of tens of kilometres within them, kilometre-scale grain.
+vec3 CityLights(vec3 direction, vec3 detail, float height, float metresPerPixel, float luminance) {
+
+    // Towns favour wet lowlands and coasts, and shun ice, bare rock and the high deserts.
+    float habitable = clamp(vWeights0.x + 0.3 * vWeights0.y + 0.8 * vWeights0.w - vWeights1.y - 0.5 * vWeights1.x, 0.0, 1.0);
+    float lowland = exp(-max(height, 0.0) / 900.0);
+    float temperate = 1.0 - smoothstep(0.82, 0.92, abs(direction.y));
+
+    float settled = smoothstep(0.5, 0.78, texture(cloudNoise, direction * 2.3 + vec3(0.17, 0.61, 0.29)).r);
+
+    // Towns gather at cell centres; a slower field decides which grow into cities, so most cells stay small and dim.
+    float towns = pow(smoothstep(0.45, 0.95, texture(cloudNoise, direction * 160.0 + vec3(0.43, 0.07, 0.81)).g), 3.0);
+    float growth = smoothstep(0.5, 0.8, texture(cloudNoise, direction * 37.0 + vec3(0.62, 0.33, 0.05)).r);
+    float lottery = texture(cloudNoise, direction * 160.0 + vec3(0.11, 0.87, 0.47)).r;
+    float metro = towns * (0.15 + 1.85 * growth) * 3.0 * lottery * lottery * lottery;
+    float rural = 0.008 * smoothstep(0.4, 0.8, texture(cloudNoise, direction * 640.0 + vec3(0.29, 0.53, 0.11)).b);
+
+    // Street grain averages to its mean once a pixel covers a few blocks, so cities do not sparkle from orbit.
+    float grain = texture(cloudNoise, detail * (1.0 / 2048.0) + vec3(0.71, 0.37, 0.19)).a;
+    float streets = mix(smoothstep(0.35, 0.75, grain) * 2.2, 1.0, smoothstep(60.0, 400.0, metresPerPixel));
+
+    float density = habitable * lowland * temperate * settled * (metro + rural) * streets;
+    vec3 sodium = vec3(1.0, 0.62, 0.3);
+
+    return mix(sodium, vec3(1.0, 0.9, 0.75), smoothstep(0.4, 1.2, density)) * density * luminance;
+
+}
+
 const int Picks = 3;
 
 void main() {
@@ -275,6 +303,20 @@ void main() {
         s.occlusion = 1.0;
         s.reflectance = 0.02;
         n = normalize(toWorld * water.normal);
+
+    }
+
+    // Lights come on as the sun sinks through civil twilight at this spot.
+    if (body.shallowWater.w > 0.0 && vHeight > 0.0) {
+
+        vec3 up = normalize(vUp);
+        float night = 1.0 - smoothstep(-0.1, 0.03, dot(up, frame.sunDirection.xyz));
+
+        if (night > 0.0) {
+
+            s.emissive += CityLights(normalize(transpose(mat3(pc.model)) * up), vDetail, vHeight, metresPerPixel, body.shallowWater.w) * night;
+
+        }
 
     }
 

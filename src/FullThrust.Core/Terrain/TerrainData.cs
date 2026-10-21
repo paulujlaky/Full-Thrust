@@ -11,6 +11,9 @@ public sealed class TerrainData {
     // Heights below zero are covered by water; ground contact treats the sea surface as solid.
     public bool Ocean { get; set; }
 
+    // Night-side city lights: luminance of a dense core in cd/m2, 0 for none.
+    public double CityLights { get; set; }
+
     // Large-scale shape: features per unit radius for continents or maria.
     public double ContinentFrequency { get; set; } = 1.6;
 

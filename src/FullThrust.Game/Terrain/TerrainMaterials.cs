@@ -21,7 +21,7 @@ public struct ChannelVectors {
 [StructLayout(LayoutKind.Sequential)]
 public struct TerrainBodyUniforms {
 
-    // w: 1 on bodies with an ocean.
+    // w: 1 on bodies with an ocean; ShallowWater.w: city light luminance, 0 for none.
     public float4 DeepWater;
     public float4 ShallowWater;
 
@@ -159,7 +159,7 @@ public sealed class TerrainMaterials : IDisposable {
         var result = new TerrainBodyUniforms {
 
             DeepWater = new float4(palette.DeepWater, data.Ocean ? 1 : 0),
-            ShallowWater = new float4(palette.ShallowWater, 0),
+            ShallowWater = new float4(palette.ShallowWater, (float)data.CityLights),
 
         };
 

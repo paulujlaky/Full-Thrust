@@ -14,7 +14,7 @@
       "initialRotationDeg": 0,
       "debugColor": [0.18, 0.35, 0.65],
       "terrain": {
-        "type": "continental", "seed": 33, "ocean": true,
+        "type": "continental", "seed": 33, "ocean": true, "cityLights": 3,
         "continentFrequency": 1.6, "oceanDepth": 4200, "mountainHeight": 5200,
         "detailAmplitude": 320, "detailWavelength": 120000, "roughness": 0.8,
         "colors": {
