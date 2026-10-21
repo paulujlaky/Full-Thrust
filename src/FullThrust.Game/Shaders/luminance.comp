@@ -37,6 +37,9 @@ void main() {
         vec2 centred = (vec2(pixel) / vec2(size) - 0.5) * 2.0;
         float weight = 1.0 - 0.6 * min(dot(centred, centred), 1.0);
 
+        // Black space would drag the average down and wash out a planet in view, so it barely counts.
+        weight *= 0.02 + smoothstep(1e-3, 1e-2, luminance);
+
         value = vec4(log2(max(luminance, 1e-4)) * weight, weight, luminance * weight, 0.0);
 
     }

@@ -110,6 +110,30 @@ vec3 AmbientIrradiance(vec3 p, vec3 n) {
 
 }
 
+// Radiance arriving along a direction: the sky-view table above the horizon, lit ground below it, the hemisphere model in space.
+vec3 EnvironmentRadiance(vec3 p, vec3 direction) {
+
+    vec3 hemisphere = AmbientIrradiance(p, direction) / PI;
+    float weight = AtmosphereWeight(p);
+    vec3 origin = PlanetRelative(frame.cameraPosition.xyz);
+    float r = length(origin);
+
+    if (weight <= 0.0 || r >= TopRadius()) {
+
+        return hemisphere;
+
+    }
+
+    vec3 environment = HitsGround(origin, direction)
+        ? AtmosphereIrradiance(p, -origin / r) / PI
+        : SkyViewLuminance(origin, direction, frame.sunDirection.xyz) * frame.sunIlluminance.rgb;
+
+    environment = environment * frame.groundIrradiance.w + vec3(0.6, 0.7, 1.0) * frame.ambientUp.w / PI;
+
+    return mix(hemisphere, environment, weight);
+
+}
+
 float DistributionGgx(float nh, float roughness) {
 
     float a = roughness * roughness;
@@ -175,11 +199,11 @@ vec3 ShadeSurface(Surface s, vec3 p, vec3 n, vec3 v, float shadow) {
 
     vec3 direct = (diffuse + specular) * SunIlluminanceAt(p) * nl * shadow;
 
-    // Without an environment map, metals pick up the ambient through a roughness-weighted Fresnel term.
+    // Specular ambient reflects the sky and the ground, blurring towards irradiance as roughness rises.
     vec3 ambientF = FresnelSchlickRoughness(nv, f0, roughness);
     vec3 irradiance = AmbientIrradiance(p, n);
-    vec3 reflected = AmbientIrradiance(p, reflect(-v, n));
-    vec3 ambient = ((1.0 - ambientF) * (1.0 - s.metallic) * s.albedo * irradiance + ambientF * mix(reflected, irradiance, roughness)) / PI;
+    vec3 reflected = EnvironmentRadiance(p, reflect(-v, n));
+    vec3 ambient = (1.0 - ambientF) * (1.0 - s.metallic) * s.albedo * irradiance / PI + ambientF * mix(reflected, irradiance / PI, roughness);
 
     for (int i = 0; i < int(frame.lightCount.x); i++) {
 
