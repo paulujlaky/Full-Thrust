@@ -7,10 +7,9 @@ using FullThrust.Game.Rendering;
 
 namespace FullThrust.Game.Debug;
 
-// Placeholder visuals until Sprint 5 plumes: exhaust lines scaled by thrust, RCS puffs and the airflow vector.
+// RCS puffs and the airflow vector; engine exhaust is drawn by PlumeSource.
 public sealed class CraftDebugDraw {
 
-    private static readonly float4 Exhaust = new(1.0f, 0.62f, 0.2f, 1);
     private static readonly float4 Puff = new(0.9f, 0.95f, 1.0f, 1);
     private static readonly float4 Airflow = new(0.35f, 0.85f, 1.0f, 1);
 
@@ -35,36 +34,6 @@ public sealed class CraftDebugDraw {
         }
 
         var transforms = _world.Store<Transform>();
-
-        foreach (var row in _world.Query<EngineState, Part>()) {
-
-            ref readonly var engine = ref row.C1;
-            ref readonly var part = ref row.C2;
-
-            if (engine.Thrust <= 0) {
-
-                continue;
-
-            }
-
-            ref readonly var craft = ref transforms.Get(part.Craft);
-
-            var definition = part.Definition;
-            var exit = craft.Position + craft.Rotation * (part.LocalPosition - part.LocalRotation * new double3(0, definition.Length / 2, 0));
-            var direction = craft.Rotation * engine.ThrustDirection;
-            var length = definition.Length * (1 + 3 * engine.Thrust / engine.Definition.VacuumThrust);
-
-            // A fan of lines reads as a plume even from far away.
-            for (var i = 0; i < 6; i++) {
-
-                var angle = i * Math.PI / 3;
-                var side = craft.Rotation * new double3(Math.Cos(angle), 0, Math.Sin(angle)) * (definition.Radius * 0.6);
-
-                _lines.Line(exit + side * 0.5, exit - direction * length + side, Exhaust);
-
-            }
-
-        }
 
         foreach (var row in _world.Query<RcsState, Part>()) {
 

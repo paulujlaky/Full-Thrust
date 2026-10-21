@@ -1,0 +1,10 @@
+{
+  // Exhaust look by fuel. Brightness scales a core luminance of 4e5 cd/m2; soot is extinction relative to the exit radius.
+  "styles": [
+    { "fuel": "RP-1", "core": [1.0, 0.56, 0.22], "brightness": 1.0, "soot": 0.5, "albedo": [0.2, 0.18, 0.16] },
+    { "fuel": "Ethanol", "core": [0.85, 0.62, 1.0], "brightness": 0.35, "soot": 0.05, "albedo": [0.5, 0.5, 0.5] },
+    { "fuel": "LH2", "core": [0.55, 0.65, 1.0], "brightness": 0.08, "soot": 0.0, "albedo": [0.8, 0.8, 0.8] },
+    { "fuel": "Aerozine-50", "core": [1.0, 0.62, 0.4], "brightness": 0.2, "soot": 0.02, "albedo": [0.6, 0.55, 0.5] },
+    { "fuel": "Hydrazine", "core": [0.9, 0.85, 0.8], "brightness": 0.02, "soot": 0.0, "albedo": [0.8, 0.8, 0.8] }
+  ]
+}

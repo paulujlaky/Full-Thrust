@@ -79,11 +79,64 @@ VolumeSample NoiseSphere(VolumePrimitive v, vec3 p) {
 
 }
 
+// Rocket exhaust: params0 nozzle exit and radius, axis direction and length, params1 spread, diamond spacing and strength.
+VolumeSample Plume(VolumePrimitive v, vec3 p) {
+
+    VolumeSample s;
+
+    s.extinction = 0.0;
+    s.emission = vec3(0.0);
+
+    vec3 offset = p - v.params0.xyz;
+    float exitRadius = v.params0.w;
+    float x = dot(offset, v.axis.xyz);
+    float span = v.axis.w;
+
+    if (x < 0.0 || x > span) {
+
+        return s;
+
+    }
+
+    float r = distance(offset, v.axis.xyz * x);
+    float radius = exitRadius + x * (v.params1.x + 0.02);
+    float dilution = exitRadius * exitRadius / (radius * radius);
+
+    float profile = exp(-2.5 * (r * r) / (radius * radius));
+    float along = (1.0 - x / span) * (1.0 - x / span) * smoothstep(0.0, exitRadius * 0.3, x);
+
+    // Turbulence streams downstream with the flow and grows with distance from the nozzle.
+    vec3 flow = offset / (exitRadius * 4.0) - v.axis.xyz * (frame.exposure.w * 6.0);
+    float turbulence = mix(1.0, texture(shapeNoise, flow).g * 1.8, smoothstep(0.0, span * 0.3, x));
+
+    float density = profile * dilution * along * turbulence;
+
+    float spacing = max(v.params1.y, 1e-3);
+    float wave = 0.5 + 0.5 * cos(6.2831853 * x / spacing);
+    float diamonds = v.params1.z * pow(wave, 6.0) * exp(-(r * r) / (0.36 * radius * radius)) * exp(-x / (spacing * 5.0));
+
+    vec3 hot = v.emission.rgb * (0.3 + 0.7 * exp(-x / (span * 0.25)));
+    vec3 white = vec3(dot(v.emission.rgb, vec3(0.2126, 0.7152, 0.0722)));
+
+    s.extinction = density * v.medium.w;
+    // Afterburning keeps the exhaust glowing as it spreads, so emission thins more slowly than mass.
+    s.emission = hot * profile * sqrt(dilution) * along * turbulence + mix(v.emission.rgb, white, 0.6) * diamonds * 2.0;
+
+    return s;
+
+}
+
 VolumeSample SampleVolume(VolumePrimitive v, vec3 p) {
 
     if (v.kind.x == VolumeNoiseSphere) {
 
         return NoiseSphere(v, p);
+
+    }
+
+    if (v.kind.x == VolumePlume) {
+
+        return Plume(v, p);
 
     }
 

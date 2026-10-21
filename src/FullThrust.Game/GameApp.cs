@@ -122,6 +122,7 @@ public sealed class GameApp : IDisposable {
     private BackgroundPass? _background;
     private AtmosphereRenderer? _atmosphere;
     private VolumetricRenderer? _volumetrics;
+    private PlumeSource? _plumes;
 
     private readonly World _world = new();
     private readonly SystemScheduler _systems = new();
@@ -313,6 +314,9 @@ public sealed class GameApp : IDisposable {
         _volumetrics = new VolumetricRenderer(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames);
         _renderer.AddPass(_volumetrics);
         _renderer.AddPass(_volumetrics.CompositePass);
+
+        _plumes = new PlumeSource(_world, _origin, _parts, Path.Combine(AppContext.BaseDirectory, "data", "effects", "plumes.json"));
+        _volumetrics.AddSource(_plumes);
 
         if (_options.DebugVolume) {
 
