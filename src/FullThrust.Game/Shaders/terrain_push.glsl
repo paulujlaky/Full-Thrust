@@ -3,10 +3,11 @@ layout(push_constant) uniform Push {
 
     mat4 model;
     vec4 detail;
-    vec4 deepWater;
-    vec4 shallowWater;
 
-    // Chunk centre in the body-fixed frame, so water can use the true radial direction.
+    // xyz: chunk centre in the body-fixed frame; w: shadow cascade for the shadow vertex shader.
     vec4 center;
+
+    // x: the body's slot in the terrain material uniforms.
+    ivec4 body;
 
 } pc;

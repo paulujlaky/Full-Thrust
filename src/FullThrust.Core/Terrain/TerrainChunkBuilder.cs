@@ -11,6 +11,10 @@ public struct TerrainVertex {
     public float3 Normal;
     public uint Color;
 
+    // TerrainWeights for channels 0-3 and 4-7, as unorm bytes.
+    public uint Materials0;
+    public uint Materials1;
+
     // Signed metres above sea level before clamping, so the shader can draw the shoreline between vertices.
     public float Height;
 
@@ -82,10 +86,10 @@ public sealed class TerrainChunkBuilder {
                 }
 
                 var slope = (float)(1 - double3.Dot(normal, direction));
-                var surface = palette.Surface(sample, direction, slope);
+                var surface = palette.Surface(sample, direction, slope, out var weights);
                 var local = _positions[i] - center;
 
-                output[y * Side + x] = new TerrainVertex { Position = ToFloat(local), Normal = ToFloat(normal), Color = Pack(surface), Height = (float)sample.Height };
+                output[y * Side + x] = new TerrainVertex { Position = ToFloat(local), Normal = ToFloat(normal), Color = Pack(surface), Materials0 = weights.Pack(0), Materials1 = weights.Pack(4), Height = (float)sample.Height };
 
                 extent = Math.Max(extent, local.Length());
 

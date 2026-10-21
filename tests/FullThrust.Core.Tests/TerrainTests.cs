@@ -168,6 +168,39 @@ public class TerrainTests {
     }
 
     [Fact]
+    public void PaletteWeightsReproduceTheSurfaceColour() {
+
+        foreach (var body in new[] { Earth, Moon }) {
+
+            var palette = new TerrainPalette(body.TerrainData!);
+
+            foreach (var direction in Directions(200, 7)) {
+
+                var sample = body.Terrain!.Sample(direction, 100);
+                var surface = palette.Surface(sample, direction, 0.2f, out var weights);
+
+                var sum = 0.0f;
+                var color = float3.Zero;
+
+                for (var i = 0; i < TerrainWeights.Count; i++) {
+
+                    sum += weights[i];
+                    color += palette.ChannelColor((TerrainChannel)i) * weights[i];
+
+                }
+
+                Assert.Equal(1.0f, sum, 4);
+                Assert.Equal(surface.X, color.X, 4);
+                Assert.Equal(surface.Y, color.Y, 4);
+                Assert.Equal(surface.Z, color.Z, 4);
+
+            }
+
+        }
+
+    }
+
+    [Fact]
     public void SkirtsHangBelowTheChunkEdges() {
 
         var palette = new TerrainPalette(Earth.TerrainData!);
@@ -231,7 +264,7 @@ public class TerrainTests {
 
         quadtree.Update(new double3(Earth.Radius + 1000, 0, 0), source);
 
-        Assert.Equal(quadtree.Count + quadtree.Culled, 6);
+        Assert.Equal(6, quadtree.Count + quadtree.Culled);
         Assert.True(source.Requests is > 0 and <= 24);
 
     }

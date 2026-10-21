@@ -19,12 +19,11 @@ public struct TerrainPush {
     // xyz: chunk centre modulo the detail period, so procedural detail is continuous across chunks.
     public float4 Detail;
 
-    // rgb water colours; DeepWater.w is 1 on bodies with an ocean.
-    public float4 DeepWater;
-    public float4 ShallowWater;
-
     // xyz: chunk centre in the body-fixed frame; w: shadow cascade for the shadow vertex shader.
     public float4 Center;
+
+    // x: the body's slot in TerrainMaterials.
+    public int4 Body;
 
 }
 
@@ -45,6 +44,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
 
     private readonly BodyTerrain[] _bodies;
     private readonly TerrainWorkers _workers;
+    private readonly TerrainMaterials _materials;
 
     private readonly Dictionary<ulong, int> _slotOf = new(SlotCount + JobCount * 2);
     private readonly Slot[] _slots = new Slot[SlotCount];
@@ -75,7 +75,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
 
     }
 
-    public TerrainRenderer(DeviceEx device, GpuUploader uploader, VkRenderPass renderPass, VkRenderPass depthPass, VkDescriptorSetLayout frameLayout, ShaderLibrary shaders, CelestialSystem system, FloatingOrigin origin) {
+    public TerrainRenderer(DeviceEx device, GpuUploader uploader, VkRenderPass renderPass, VkRenderPass depthPass, VkDescriptorSetLayout frameLayout, ShaderLibrary shaders, CelestialSystem system, FloatingOrigin origin, float anisotropy, string texturesRoot) {
 
         _device = device;
         _system = system;
@@ -87,13 +87,14 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
 
             if (body.Terrain is { } terrain && body.TerrainData is { } data) {
 
-                bodies.Add(new BodyTerrain(this, body, terrain, new TerrainPalette(data)));
+                bodies.Add(new BodyTerrain(this, body, terrain, data, new TerrainPalette(data), bodies.Count));
 
             }
 
         }
 
         _bodies = bodies.ToArray();
+        _materials = new TerrainMaterials(device, uploader, anisotropy, texturesRoot, bodies.Select(b => (b.Data, b.Palette)).ToArray());
         _workers = new TerrainWorkers(JobCount, Math.Clamp(Environment.ProcessorCount - 3, 1, 4));
 
         for (var i = 0; i < SlotCount; i++) {
@@ -131,7 +132,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
 
         }
 
-        _layout = device.CreatePipelineLayout([frameLayout], [
+        _layout = device.CreatePipelineLayout([frameLayout, _materials.SetLayout], [
 
             new VkPushConstantRange { StageFlags = VkShaderStageFlags.VertexBit | VkShaderStageFlags.FragmentBit, Offset = ByteSize.Zero, Size = ByteSize.Of<TerrainPush>() },
 
@@ -328,6 +329,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
 
         cmd.BindPipeline(VkPipelineBindPoint.Graphics, pipeline);
         cmd.BindDescriptorSet(VkPipelineBindPoint.Graphics, _layout, 0, frameSet, []);
+        cmd.BindDescriptorSet(VkPipelineBindPoint.Graphics, _layout, 1, _materials.Set, []);
         cmd.BindVertexBuffer(0, _vertices.VkBuffer);
         cmd.BindIndexBuffer(_indices.VkBuffer, ByteSize.Zero, VkIndexType.UInt16);
 
@@ -367,9 +369,8 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
 
                     Model = matrix * float4x4.CreateTranslation(local),
                     Detail = new float4(SpaceMath.ToFloat(detail), ShowLevels ? node.Level + 1 : 0),
-                    DeepWater = new float4(body.Palette.DeepWater, body.Terrain.HasOcean ? 1 : 0),
-                    ShallowWater = new float4(body.Palette.ShallowWater, 0),
                     Center = new float4(SpaceMath.ToFloat(c), cascade),
+                    Body = new int4(body.Slot, 0, 0, 0),
 
                 };
 
@@ -393,6 +394,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
     public void Dispose() {
 
         _workers.Dispose();
+        _materials.Dispose();
 
         _device.DestroyPipeline(_pipeline, null);
         _device.DestroyPipeline(_depthPipeline, null);
@@ -416,9 +418,12 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
 
         private readonly TerrainRenderer _owner;
 
-        public BodyTerrain(TerrainRenderer owner, CelestialBody body, ITerrain terrain, TerrainPalette palette) {
+        public BodyTerrain(TerrainRenderer owner, CelestialBody body, ITerrain terrain, TerrainData data, TerrainPalette palette, int slot) {
 
             _owner = owner;
+
+            Data = data;
+            Slot = slot;
 
             Body = body;
             Terrain = terrain;
@@ -428,6 +433,10 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
         }
 
         public CelestialBody Body { get; }
+
+        public TerrainData Data { get; }
+
+        public int Slot { get; }
 
         public ITerrain Terrain { get; }
 

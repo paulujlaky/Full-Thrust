@@ -38,15 +38,40 @@ public sealed class TerrainPalette {
 
     }
 
+    public float3 ChannelColor(TerrainChannel channel) => channel switch {
+
+        TerrainChannel.Lowland => _lowland,
+        TerrainChannel.Dry => _dry,
+        TerrainChannel.Highland => _highland,
+        TerrainChannel.Beach => _beach,
+        TerrainChannel.Rock => _rock,
+        TerrainChannel.Snow => _snow,
+        TerrainChannel.Mare => _mare,
+        _ => _ejecta,
+
+    };
+
+    public float4 Surface(in TerrainSample sample, double3 direction, float slope) => Surface(sample, direction, slope, out _);
+
     // Ground (or sea bed) albedo and roughness; the shader draws water over it. Slope is 1 - cos(tilt).
-    public float4 Surface(in TerrainSample sample, double3 direction, float slope) {
+    // Weights give each channel's share of the colour, so detail materials can follow it.
+    public float4 Surface(in TerrainSample sample, double3 direction, float slope, out TerrainWeights weights) {
 
         if (_cratered) {
 
-            var albedo = float3.Lerp(_highland, _mare, sample.Moisture);
+            var mare = sample.Moisture;
+            var ejecta = sample.Feature * 0.55f;
+            var rock = Step(0.12f, 0.35f, slope) * 0.5f;
 
-            albedo = float3.Lerp(albedo, _ejecta, sample.Feature * 0.55f);
-            albedo = float3.Lerp(albedo, _rock, Step(0.12f, 0.35f, slope) * 0.5f);
+            var albedo = float3.Lerp(_highland, _mare, mare);
+
+            albedo = float3.Lerp(albedo, _ejecta, ejecta);
+            albedo = float3.Lerp(albedo, _rock, rock);
+
+            weights = TerrainWeights.Only(TerrainChannel.Highland);
+            weights.Lerp(TerrainChannel.Mare, mare);
+            weights.Lerp(TerrainChannel.Ejecta, ejecta);
+            weights.Lerp(TerrainChannel.Rock, rock);
 
             return new float4(albedo, 0.95f);
 
@@ -58,16 +83,27 @@ public sealed class TerrainPalette {
 
         // Subtropical deserts and wetter mid-latitudes, broken up by the moisture field.
         var arid = Step(0.62f, 0.25f, sample.Moisture) * (1 - Step(18, 38, MathF.Abs(latitude - 26)) * 0.7f);
-        var land = float3.Lerp(_lowland, _dry, Math.Clamp(arid + Step(1200, 2600, height) * 0.4f, 0, 1));
-
-        land = float3.Lerp(land, _highland, Step(900, 2800, height));
-        land = float3.Lerp(land, _beach, Step(5, 1, height));
-        land = float3.Lerp(land, _rock, Math.Clamp(Step(0.18f, 0.4f, slope) + sample.Feature * 0.35f, 0, 1));
+        var dry = Math.Clamp(arid + Step(1200, 2600, height) * 0.4f, 0, 1);
+        var highland = Step(900, 2800, height);
+        var beach = Step(5, 1, height);
+        var steep = Math.Clamp(Step(0.18f, 0.4f, slope) + sample.Feature * 0.35f, 0, 1);
 
         var snowline = 5200 - 5000 * Step(30, 75, latitude);
         var snow = Step(snowline - 300, snowline + 300, height) * (1 - Step(0.45f, 0.7f, slope));
 
+        var land = float3.Lerp(_lowland, _dry, dry);
+
+        land = float3.Lerp(land, _highland, highland);
+        land = float3.Lerp(land, _beach, beach);
+        land = float3.Lerp(land, _rock, steep);
         land = float3.Lerp(land, _snow, snow);
+
+        weights = TerrainWeights.Only(TerrainChannel.Lowland);
+        weights.Lerp(TerrainChannel.Dry, dry);
+        weights.Lerp(TerrainChannel.Highland, highland);
+        weights.Lerp(TerrainChannel.Beach, beach);
+        weights.Lerp(TerrainChannel.Rock, steep);
+        weights.Lerp(TerrainChannel.Snow, snow);
 
         return new float4(land, 0.92f - 0.4f * snow);
 

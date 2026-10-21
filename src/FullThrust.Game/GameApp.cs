@@ -271,7 +271,7 @@ public sealed class GameApp : IDisposable {
 
         _modelLibrary = new ModelLibrary(_vulkan, _uploader, _models, Path.Combine(AppContext.BaseDirectory, _options.ModelsDirectory));
 
-        _terrain = new TerrainRenderer(_vulkan.Device, _uploader, _renderer.SceneRenderPass, _renderer.DepthRenderPass, _renderer.Frames.SetLayout, shaders, _bodies, _origin);
+        _terrain = new TerrainRenderer(_vulkan.Device, _uploader, _renderer.SceneRenderPass, _renderer.DepthRenderPass, _renderer.Frames.SetLayout, shaders, _bodies, _origin, _vulkan.SamplerAnisotropy, Path.Combine(AppContext.BaseDirectory, "data", "textures", "terrain"));
 
         _terrain.ShowLevels = _options.ShowTerrainLevels;
         _renderer.AddPass(_terrain);

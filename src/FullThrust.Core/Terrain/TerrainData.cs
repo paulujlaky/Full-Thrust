@@ -35,7 +35,22 @@ public sealed class TerrainData {
 
     public Dictionary<string, double[]> Colors { get; set; } = [];
 
+    // Detail materials drawn over the palette colours up close, keyed by TerrainChannel name.
+    public List<TerrainMaterialData> Materials { get; set; } = [];
+
     public List<SiteData> Sites { get; set; } = [];
+
+}
+
+public sealed class TerrainMaterialData {
+
+    public string Channel { get; set; } = "";
+
+    // Folder under data/textures/terrain holding the texture set.
+    public string Texture { get; set; } = "";
+
+    // Metres covered by one repeat of the texture.
+    public double TileSize { get; set; } = 4;
 
 }
 

@@ -22,6 +22,14 @@
           "lowland": [0.07, 0.12, 0.035], "dry": [0.32, 0.26, 0.15], "highland": [0.2, 0.17, 0.12],
           "rock": [0.22, 0.2, 0.18], "snow": [0.85, 0.87, 0.9]
         },
+        "materials": [
+          { "channel": "lowland", "texture": "aerial_grass_rock", "tileSize": 9 },
+          { "channel": "dry", "texture": "dry_ground_01", "tileSize": 5 },
+          { "channel": "highland", "texture": "dry_ground_01", "tileSize": 7 },
+          { "channel": "beach", "texture": "aerial_beach_01", "tileSize": 8 },
+          { "channel": "rock", "texture": "rocky_terrain_02", "tileSize": 6 },
+          { "channel": "snow", "texture": "snow_field_aerial", "tileSize": 12 }
+        ],
         "sites": [ { "name": "Launch Complex 1", "latitudeDeg": 28.5, "longitudeDeg": 0, "radius": 160, "blend": 900, "minimumHeight": 6 } ]
       },
       "atmosphere": {
@@ -55,7 +63,13 @@
         "continentFrequency": 1.3, "mareDepth": 1800,
         "detailAmplitude": 900, "detailWavelength": 200000, "roughness": 0.85,
         "largestCrater": 60000, "smallestCrater": 30, "craterDensity": 0.55,
-        "colors": { "highland": [0.3, 0.29, 0.27], "mare": [0.1, 0.1, 0.1], "ejecta": [0.48, 0.47, 0.45], "rock": [0.22, 0.21, 0.2] }
+        "colors": { "highland": [0.3, 0.29, 0.27], "mare": [0.1, 0.1, 0.1], "ejecta": [0.48, 0.47, 0.45], "rock": [0.22, 0.21, 0.2] },
+        "materials": [
+          { "channel": "highland", "texture": "moon_01", "tileSize": 6 },
+          { "channel": "mare", "texture": "moon_01", "tileSize": 8 },
+          { "channel": "ejecta", "texture": "moon_dusted_02", "tileSize": 6 },
+          { "channel": "rock", "texture": "rocky_terrain_02", "tileSize": 6 }
+        ]
       },
       "orbit": {
         "semiMajorAxis": 384399000,

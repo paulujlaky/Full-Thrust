@@ -2,6 +2,7 @@
 
 #include "common.glsl"
 #include "terrain_push.glsl"
+#include "terrain_materials.glsl"
 
 layout(location = 0) in vec3 vWorldPosition;
 layout(location = 1) in vec3 vNormal;
@@ -9,6 +10,9 @@ layout(location = 2) in vec4 vSurface;
 layout(location = 3) in vec3 vDetail;
 layout(location = 4) in float vHeight;
 layout(location = 5) in vec3 vUp;
+layout(location = 6) in vec3 vBodyNormal;
+layout(location = 7) in vec4 vWeights0;
+layout(location = 8) in vec4 vWeights1;
 
 layout(location = 0) out vec4 outColor;
 
@@ -81,31 +85,157 @@ vec3 SrgbToLinear(vec3 c) {
 
 }
 
+const int Picks = 3;
+
 void main() {
+
+    TerrainBody body = terrain.bodies[pc.body.x];
 
     vec3 n = normalize(vNormal);
     vec3 v = normalize(frame.cameraPosition.xyz - vWorldPosition);
 
+    vec3 macro = SrgbToLinear(vSurface.rgb);
+    float metresPerPixel = length(fwidth(vDetail));
+
+    float weights[8] = float[](vWeights0.x, vWeights0.y, vWeights0.z, vWeights0.w, vWeights1.x, vWeights1.y, vWeights1.z, vWeights1.w);
+    int layers[8] = int[](body.layers0.x, body.layers0.y, body.layers0.z, body.layers0.w, body.layers1.x, body.layers1.y, body.layers1.z, body.layers1.w);
+    float scales[8] = float[](body.tileScale0.x, body.tileScale0.y, body.tileScale0.z, body.tileScale0.w, body.tileScale1.x, body.tileScale1.y, body.tileScale1.z, body.tileScale1.w);
+
+    // The heaviest channels that have a detail material; the rest keep the palette colour.
+    int pick[Picks] = int[](-1, -1, -1);
+    float pickWeight[Picks] = float[](0.0, 0.0, 0.0);
+
+    for (int c = 0; c < 8; c++) {
+
+        float w = weights[c];
+
+        if (layers[c] < 0 || w <= pickWeight[Picks - 1]) {
+
+            continue;
+
+        }
+
+        int slot = Picks - 1;
+
+        while (slot > 0 && w > pickWeight[slot - 1]) {
+
+            pick[slot] = pick[slot - 1];
+            pickWeight[slot] = pickWeight[slot - 1];
+            slot--;
+
+        }
+
+        pick[slot] = c;
+        pickWeight[slot] = w;
+
+    }
+
+    vec3 bodyNormal = normalize(vBodyNormal);
+    vec3 blend = pow(abs(bodyNormal), vec3(4.0));
+
+    blend /= blend.x + blend.y + blend.z;
+
+    vec3 albedo = vec3(0.0);
+    vec3 normalOffset = vec3(0.0);
+    float roughness = 0.0;
+    float occlusion = 0.0;
+    float covered = 0.0;
+    float fade = 0.0;
+
+    if (pick[0] >= 0 && TileFade(metresPerPixel, scales[pick[0]] * 0.125) > 0.0) {
+
+        DetailSample samples[Picks];
+        float heightWeight[Picks];
+        float top = 0.0;
+
+        for (int i = 0; i < Picks; i++) {
+
+            heightWeight[i] = 0.0;
+
+            if (pick[i] < 0) {
+
+                continue;
+
+            }
+
+            float levelFade;
+
+            samples[i] = SampleLayered(layers[pick[i]], vDetail, blend, scales[pick[i]], metresPerPixel, levelFade);
+            fade = max(fade, levelFade);
+            // Heights are centred on each texture's mean so no material wins transitions on average.
+            // Only the fine level sharpens transitions: coarse heights would print the tile pattern across the landscape.
+            float contrast = 0.6 * TileFade(metresPerPixel, scales[pick[i]]);
+            float breakup = (ValueNoise(vDetail * (1.0 / 32.0) + float(pick[i]) * 17.0, DetailPeriod / 32.0) - 0.5) * 0.5;
+
+            heightWeight[i] = pickWeight[i] + (samples[i].height - body.inverseMean[pick[i]].w) * contrast + breakup * contrast;
+            top = max(top, heightWeight[i]);
+            covered += pickWeight[i];
+
+        }
+
+        float total = 0.0;
+
+        // Height blending: the material standing proud of the others wins near a transition.
+        for (int i = 0; i < Picks; i++) {
+
+            heightWeight[i] = pick[i] < 0 ? 0.0 : max(heightWeight[i] - top + 0.2, 0.0);
+            total += heightWeight[i];
+
+        }
+
+        for (int i = 0; i < Picks; i++) {
+
+            if (heightWeight[i] <= 0.0) {
+
+                continue;
+
+            }
+
+            float w = heightWeight[i] / total;
+
+            // Texture brightness over the palette hue, with a little of the texture's own colour.
+            vec4 palette = body.palette[pick[i]];
+            float brightness = dot(samples[i].albedo, vec3(0.2126, 0.7152, 0.0722)) * palette.w;
+            vec3 coloured = palette.rgb * samples[i].albedo * body.inverseMean[pick[i]].rgb;
+
+            albedo += w * mix(palette.rgb * brightness, coloured, 0.3);
+            normalOffset += w * samples[i].normal;
+            roughness += w * samples[i].roughness;
+            occlusion += w * samples[i].occlusion;
+
+        }
+
+    }
+
+    float detail = fade * clamp(covered, 0.0, 1.0);
+
     Surface s;
 
-    s.albedo = SrgbToLinear(vSurface.rgb);
+    s.albedo = mix(macro, albedo, detail);
     s.metallic = 0.0;
-    s.roughness = vSurface.a;
-    s.occlusion = 1.0;
+    s.roughness = mix(vSurface.a, roughness, detail);
+    s.occlusion = mix(1.0, occlusion, detail);
     s.emissive = vec3(0.0);
+
+    if (detail > 0.0) {
+
+        n = normalize(mat3(pc.model) * normalize(bodyNormal + normalOffset * detail));
+
+    }
 
     float d = Detail(vDetail);
 
-    s.albedo *= 1.0 + 0.8 * d;
-    s.roughness = clamp(s.roughness + 0.15 * d, 0.3, 1.0);
+    s.albedo *= 1.0 + 0.6 * d;
+    s.roughness = clamp(s.roughness + 0.1 * d, 0.3, 1.0);
 
     // The shoreline follows the interpolated signed height, so coasts are smooth between vertices.
-    if (pc.deepWater.w > 0.5 && vHeight < 0.0) {
+    if (body.deepWater.w > 0.5 && vHeight < 0.0) {
 
         float depth = -vHeight;
 
-        s.albedo = mix(pc.shallowWater.rgb, pc.deepWater.rgb, smoothstep(0.0, 250.0, depth));
+        s.albedo = mix(body.shallowWater.rgb, body.deepWater.rgb, smoothstep(0.0, 250.0, depth));
         s.roughness = 0.07;
+        s.occlusion = 1.0;
         n = normalize(vUp);
 
     }

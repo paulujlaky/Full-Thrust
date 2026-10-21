@@ -53,5 +53,7 @@ dotnet run --project tools/FullThrust.ModelGen -- inspect data/models/nasa/ssme.
 
 Planet and Moon surfaces are procedural, double-precision height fields defined per body in `earth-moon.json`: continents and oceans, or maria and craters, plus flattened sites such as the launch complex. A cube-sphere quadtree picks chunks by camera distance, worker threads build them, and skirts hide the seams between levels. The same height function drives the collision patch under the focus craft, so craft rest on the ground they are drawn on.
 
+Up close, terrain blends detail materials over the palette colours: each body maps its palette channels (lowland, dry, rock, snow and so on) to CC0 texture sets under `data/textures/terrain` (see its NOTICE), sampled triplanar in the body-fixed frame at two tiling scales and height-blended between the three heaviest channels. Detail is normalised to each texture's mean colour, so it fades back to the palette at a distance.
+
 ## License
 The license is the [Unlicense](https://unlicense.org/), which allows for free use, modification, and distribution of the software.
