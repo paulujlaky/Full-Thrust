@@ -8,6 +8,14 @@ layout(local_size_x = 8, local_size_y = 8) in;
 
 layout(set = 1, binding = 4, rgba16f) uniform writeonly image2D volumeColor;
 layout(set = 1, binding = 5, r32f) uniform writeonly image2D volumeDepth;
+layout(set = 1, binding = 6, r32f) uniform writeonly image2D volumeDistance;
+
+// x: this frame's jitter offset, so successive frames sample between each other's steps.
+layout(push_constant) uniform Push {
+
+    vec4 params;
+
+} pc;
 
 const int MaxSegments = 8;
 
@@ -32,6 +40,7 @@ void main() {
     if (count == 0) {
 
         imageStore(volumeColor, pixel, vec4(0.0, 0.0, 0.0, 1.0));
+        imageStore(volumeDistance, pixel, vec4(1e30));
 
         return;
 
@@ -92,7 +101,7 @@ void main() {
     result.transmittance = 1.0;
     result.depth = 0.0;
 
-    float jitter = fract(52.9829189 * fract(dot(vec2(pixel), vec2(0.06711056, 0.00583715))));
+    float jitter = fract(52.9829189 * fract(dot(vec2(pixel), vec2(0.06711056, 0.00583715))) + pc.params.x);
 
     for (int s = 0; s < segments && result.transmittance > 0.005; s++) {
 
@@ -114,5 +123,8 @@ void main() {
     }
 
     imageStore(volumeColor, pixel, vec4(min(luminance * frame.exposure.x, vec3(64000.0)), result.transmittance));
+
+    // Where the volume mostly is along the ray, so history can be reprojected from there; the scene behind when it is empty.
+    imageStore(volumeDistance, pixel, vec4(opacity > 0.01 ? result.depth / opacity : min(sceneDistance, 1e30)));
 
 }

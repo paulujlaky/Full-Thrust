@@ -314,7 +314,7 @@ public sealed class GameApp : IDisposable {
         _atmosphere = new AtmosphereRenderer(_vulkan.Device, shaders, _renderer.Frames, _bodies, _origin);
         _renderer.AddPass(_atmosphere);
 
-        _volumetrics = new VolumetricRenderer(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames);
+        _volumetrics = new VolumetricRenderer(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames, _origin);
         _renderer.AddPass(_volumetrics);
         _renderer.AddPass(_volumetrics.CompositePass);
 

@@ -1,0 +1,70 @@
+#version 450
+
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 1, binding = 0) uniform sampler2D current;
+layout(set = 1, binding = 1) uniform sampler2D distances;
+layout(set = 1, binding = 2) uniform sampler2D history;
+layout(set = 1, binding = 3, rgba16f) uniform writeonly image2D resolved;
+
+layout(push_constant) uniform Push {
+
+    mat4 previousViewProjection;
+
+    // xyz: this frame's floating origin minus the previous one; w: weight of the new frame.
+    vec4 originShift;
+
+} pc;
+
+// Temporal accumulation: history reprojected through where the volume was seen, clamped to this frame's neighbourhood.
+void main() {
+
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(resolved);
+
+    if (any(greaterThanEqual(pixel, size))) {
+
+        return;
+
+    }
+
+    vec4 now = texelFetch(current, pixel, 0);
+    vec4 low = now;
+    vec4 high = now;
+
+    for (int y = -1; y <= 1; y++) {
+
+        for (int x = -1; x <= 1; x++) {
+
+            vec4 neighbour = texelFetch(current, clamp(pixel + ivec2(x, y), ivec2(0), size - 1), 0);
+
+            low = min(low, neighbour);
+            high = max(high, neighbour);
+
+        }
+
+    }
+
+    ivec2 full = min(pixel * 2, ivec2(frame.viewport.xy) - 1);
+    vec2 ndc = (vec2(full) + 0.5) * frame.viewport.zw * 2.0 - 1.0;
+    float distance = min(texelFetch(distances, pixel, 0).r, 1e7);
+    vec3 position = frame.cameraPosition.xyz + ViewDirection(ndc) * distance + pc.originShift.xyz;
+
+    vec4 clip = pc.previousViewProjection * vec4(position, 1.0);
+    vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+
+    float weight = pc.originShift.w;
+
+    if (clip.w <= 0.0 || any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
+
+        weight = 1.0;
+
+    }
+
+    vec4 previous = clamp(texture(history, uv), low, high);
+
+    imageStore(resolved, pixel, mix(previous, now, weight));
+
+}
