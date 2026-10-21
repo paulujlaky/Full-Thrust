@@ -35,39 +35,103 @@ struct DetailSample {
 
 };
 
+vec2 TileOffset(float index) {
+
+    return fract(sin(vec2(index * 12.9898, index * 78.233)) * 43758.5453);
+
+}
+
+// One projection plane. A variant of zero or more blends two copies of the tile shifted by offsets that change
+// with a smooth noise index, so the tile grid never shows. Explicit gradients keep mip selection continuous.
+void SamplePlane(int layer, vec2 uv, vec2 gx, vec2 gy, float variant, out vec4 albedo, out vec4 surface) {
+
+    if (variant < 0.0) {
+
+        albedo = textureGrad(albedoMaps, vec3(uv, layer), gx, gy);
+        surface = textureGrad(surfaceMaps, vec3(uv, layer), gx, gy);
+
+        return;
+
+    }
+
+    float index = floor(variant);
+    float t = smoothstep(0.2, 0.8, variant - index);
+
+    vec2 a = uv + TileOffset(index);
+    vec2 b = uv + TileOffset(index + 1.0);
+
+    albedo = mix(textureGrad(albedoMaps, vec3(a, layer), gx, gy), textureGrad(albedoMaps, vec3(b, layer), gx, gy), t);
+    surface = mix(textureGrad(surfaceMaps, vec3(a, layer), gx, gy), textureGrad(surfaceMaps, vec3(b, layer), gx, gy), t);
+
+}
+
 // Triplanar projection in the body-fixed frame; normals use the UDN blend of each plane's tangent-space xy.
-DetailSample SampleDetail(int layer, vec3 position, vec3 blend, float scale, float angle) {
+// Planes with almost no weight are skipped, which on gentle terrain leaves one.
+DetailSample SampleDetail(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend, float scale, float angle, float variant) {
+
+    mat2 r = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
 
     vec3 p = position * scale;
-    mat2 r = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+    vec3 px = dx * scale;
+    vec3 py = dy * scale;
 
     p.xy = r * p.xy;
     p.yz = r * p.yz;
+    px.xy = r * px.xy;
+    px.yz = r * px.yz;
+    py.xy = r * py.xy;
+    py.yz = r * py.yz;
 
-    vec4 ax = texture(albedoMaps, vec3(p.zy, layer));
-    vec4 ay = texture(albedoMaps, vec3(p.xz, layer));
-    vec4 az = texture(albedoMaps, vec3(p.xy, layer));
+    vec3 w = blend * step(vec3(0.02), blend);
 
-    vec4 sx = texture(surfaceMaps, vec3(p.zy, layer));
-    vec4 sy = texture(surfaceMaps, vec3(p.xz, layer));
-    vec4 sz = texture(surfaceMaps, vec3(p.xy, layer));
+    w /= w.x + w.y + w.z;
 
-    vec4 albedo = ax * blend.x + ay * blend.y + az * blend.z;
-    vec4 surface = sx * blend.x + sy * blend.y + sz * blend.z;
+    vec4 albedo = vec4(0.0);
+    vec4 surface = vec4(0.0);
+    vec3 normal = vec3(0.0);
 
-    vec2 nx = sx.xy * 2.0 - 1.0;
-    vec2 ny = sy.xy * 2.0 - 1.0;
-    vec2 nz = sz.xy * 2.0 - 1.0;
+    vec4 a;
+    vec4 s;
 
-    DetailSample s;
+    if (w.x > 0.0) {
 
-    s.albedo = albedo.rgb;
-    s.height = albedo.a;
-    s.normal = vec3(0.0, nx.y, nx.x) * blend.x + vec3(ny.x, 0.0, ny.y) * blend.y + vec3(nz.x, nz.y, 0.0) * blend.z;
-    s.roughness = surface.b;
-    s.occlusion = surface.a;
+        SamplePlane(layer, p.zy, px.zy, py.zy, variant, a, s);
 
-    return s;
+        albedo += a * w.x;
+        surface += s * w.x;
+        normal += vec3(0.0, s.y * 2.0 - 1.0, s.x * 2.0 - 1.0) * w.x;
+
+    }
+
+    if (w.y > 0.0) {
+
+        SamplePlane(layer, p.xz, px.xz, py.xz, variant, a, s);
+
+        albedo += a * w.y;
+        surface += s * w.y;
+        normal += vec3(s.x * 2.0 - 1.0, 0.0, s.y * 2.0 - 1.0) * w.y;
+
+    }
+
+    if (w.z > 0.0) {
+
+        SamplePlane(layer, p.xy, px.xy, py.xy, variant, a, s);
+
+        albedo += a * w.z;
+        surface += s * w.z;
+        normal += vec3(s.x * 2.0 - 1.0, s.y * 2.0 - 1.0, 0.0) * w.z;
+
+    }
+
+    DetailSample d;
+
+    d.albedo = albedo.rgb;
+    d.height = albedo.a;
+    d.normal = normal;
+    d.roughness = surface.b;
+    d.occlusion = surface.a;
+
+    return d;
 
 }
 
@@ -93,7 +157,7 @@ float TileFade(float metresPerPixel, float scale) {
 }
 
 // Two tiling levels, the coarser eight times larger, so detail carries further and repeats less. Fade is the coarse level's.
-DetailSample SampleLayered(int layer, vec3 position, vec3 blend, float scale, float metresPerPixel, out float fade) {
+DetailSample SampleLayered(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend, float scale, float metresPerPixel, float variant, out float fade) {
 
     const float Coarse = 0.1173;
 
@@ -101,7 +165,7 @@ DetailSample SampleLayered(int layer, vec3 position, vec3 blend, float scale, fl
 
     fade = TileFade(metresPerPixel, scale * Coarse);
 
-    DetailSample coarse = SampleDetail(layer, position, blend, scale * Coarse, 0.61);
+    DetailSample coarse = SampleDetail(layer, position, dx, dy, blend, scale * Coarse, 0.61, variant);
 
     if (near <= 0.0) {
 
@@ -110,6 +174,6 @@ DetailSample SampleLayered(int layer, vec3 position, vec3 blend, float scale, fl
     }
 
     // Up close the coarse level still breaks up the repeats of the fine one.
-    return MixDetail(coarse, SampleDetail(layer, position, blend, scale, 0.0), near * 0.75);
+    return MixDetail(coarse, SampleDetail(layer, position, dx, dy, blend, scale, 0.0, variant * 0.37), near * 0.75);
 
 }

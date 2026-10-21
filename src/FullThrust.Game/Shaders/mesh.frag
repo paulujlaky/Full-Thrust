@@ -67,6 +67,7 @@ void main() {
     s.roughness = clamp(material.params.y * mr.g, 0.0, 1.0);
     s.occlusion = 1.0 + material.params.z * (texture(occlusionMap, vUv).r - 1.0);
     s.emissive = material.emissive.rgb * texture(emissiveMap, vUv).rgb;
+    s.reflectance = 0.04;
 
     vec3 v = normalize(frame.cameraPosition.xyz - vWorldPosition);
 

@@ -90,6 +90,9 @@ struct Surface {
     float occlusion;
     vec3 emissive;
 
+    // Normal-incidence reflectance of a dielectric: 0.04 for most, 0.02 for water.
+    float reflectance;
+
 };
 
 // Cook-Torrance GGX under the sun plus a hemisphere ambient; returns radiance before exposure.
@@ -104,7 +107,7 @@ vec3 ShadeSurface(Surface s, vec3 n, vec3 v, float shadow) {
     float nh = max(dot(n, h), 0.0);
     float vh = max(dot(v, h), 0.0);
 
-    vec3 f0 = mix(vec3(0.04), s.albedo, s.metallic);
+    vec3 f0 = mix(vec3(s.reflectance), s.albedo, s.metallic);
     vec3 f = FresnelSchlick(vh, f0);
 
     vec3 specular = DistributionGgx(nh, roughness) * VisibilitySmithGgx(nv, nl, roughness) * f;

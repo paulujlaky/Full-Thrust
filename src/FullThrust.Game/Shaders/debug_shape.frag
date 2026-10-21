@@ -37,6 +37,7 @@ void main() {
     s.roughness = 0.7;
     s.occlusion = 1.0;
     s.emissive = vec3(0.0);
+    s.reflectance = 0.04;
 
     outColor = vec4(Expose(ShadeSurface(s, n, v, 1.0)), 1.0);
 

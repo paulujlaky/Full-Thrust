@@ -3,6 +3,7 @@
 #include "common.glsl"
 #include "terrain_push.glsl"
 #include "terrain_materials.glsl"
+#include "ocean.glsl"
 
 layout(location = 0) in vec3 vWorldPosition;
 layout(location = 1) in vec3 vNormal;
@@ -95,7 +96,13 @@ void main() {
     vec3 v = normalize(frame.cameraPosition.xyz - vWorldPosition);
 
     vec3 macro = SrgbToLinear(vSurface.rgb);
-    float metresPerPixel = length(fwidth(vDetail));
+    // Derivatives are taken here, in uniform control flow, for the texture fetches inside branches below.
+    vec3 detailDx = dFdx(vDetail);
+    vec3 detailDy = dFdy(vDetail);
+    float metresPerPixel = length(abs(detailDx) + abs(detailDy));
+
+    // Smooth index picking which shifted copy of each tile to show, so tiling never forms a lattice.
+    float variant = ValueNoise(vDetail * (1.0 / 64.0), DetailPeriod / 64.0) * 8.0;
 
     float weights[8] = float[](vWeights0.x, vWeights0.y, vWeights0.z, vWeights0.w, vWeights1.x, vWeights1.y, vWeights1.z, vWeights1.w);
     int layers[8] = int[](body.layers0.x, body.layers0.y, body.layers0.z, body.layers0.w, body.layers1.x, body.layers1.y, body.layers1.z, body.layers1.w);
@@ -160,7 +167,7 @@ void main() {
 
             float levelFade;
 
-            samples[i] = SampleLayered(layers[pick[i]], vDetail, blend, scales[pick[i]], metresPerPixel, levelFade);
+            samples[i] = SampleLayered(layers[pick[i]], vDetail, detailDx, detailDy, blend, scales[pick[i]], metresPerPixel, variant, levelFade);
             fade = max(fade, levelFade);
             // Heights are centred on each texture's mean so no material wins transitions on average.
             // Only the fine level sharpens transitions: coarse heights would print the tile pattern across the landscape.
@@ -216,6 +223,7 @@ void main() {
     s.roughness = mix(vSurface.a, roughness, detail);
     s.occlusion = mix(1.0, occlusion, detail);
     s.emissive = vec3(0.0);
+    s.reflectance = 0.04;
 
     if (detail > 0.0) {
 
@@ -228,15 +236,39 @@ void main() {
     s.albedo *= 1.0 + 0.6 * d;
     s.roughness = clamp(s.roughness + 0.1 * d, 0.3, 1.0);
 
+    bool ocean = body.deepWater.w > 0.5;
+    float time = frame.exposure.w;
+
+    // Wet ground just above the waterline is darker and glossier.
+    if (ocean && vHeight >= 0.0 && vHeight < 1.5) {
+
+        float wet = 1.0 - smoothstep(0.0, 1.5, vHeight);
+
+        s.albedo *= 1.0 - 0.45 * wet;
+        s.roughness = mix(s.roughness, 0.25, wet);
+
+    }
+
     // The shoreline follows the interpolated signed height, so coasts are smooth between vertices.
-    if (body.deepWater.w > 0.5 && vHeight < 0.0) {
+    if (ocean && vHeight < 0.0) {
 
         float depth = -vHeight;
+        mat3 toWorld = mat3(pc.model);
+        vec3 up = normalize(vUp);
 
-        s.albedo = mix(body.shallowWater.rgb, body.deepWater.rgb, smoothstep(0.0, 250.0, depth));
-        s.roughness = 0.07;
+        // The sea bed shows through the shallows, absorbed red first, under light scattered back by the water column.
+        vec3 transmittance = exp(-depth * vec3(0.9, 0.16, 0.08));
+        vec3 scattering = mix(body.shallowWater.rgb, body.deepWater.rgb, smoothstep(0.0, 250.0, depth));
+
+        OceanSurface water = Ocean(vDetail, transpose(toWorld) * up, time, metresPerPixel);
+        float foam = ShoreFoam(vDetail, depth, time);
+
+        s.albedo = mix(s.albedo * transmittance + scattering * (1.0 - transmittance), vec3(0.8), foam);
+        s.metallic = 0.0;
+        s.roughness = mix(water.roughness, 0.8, foam);
         s.occlusion = 1.0;
-        n = normalize(vUp);
+        s.reflectance = 0.02;
+        n = normalize(toWorld * water.normal);
 
     }
 
