@@ -36,6 +36,8 @@ public sealed class CelestialBodyData {
 
     public AtmosphereData? Atmosphere { get; set; }
 
+    public CloudData? Clouds { get; set; }
+
     public TerrainData? Terrain { get; set; }
 
     public double[] DebugColor { get; set; } = [0.6, 0.6, 0.6];
@@ -72,6 +74,31 @@ public sealed class AtmosphereData {
 
     // Optical properties for rendering; null draws no sky.
     public ScatteringData? Scattering { get; set; }
+
+}
+
+// One cumulus layer; lengths in metres.
+public sealed class CloudData {
+
+    public double BaseAltitude { get; set; } = 1500;
+
+    public double Thickness { get; set; } = 4000;
+
+    // Fraction of the sky covered, 0 to 1.
+    public double Coverage { get; set; } = 0.45;
+
+    // Size of one weather system.
+    public double WeatherScale { get; set; } = 60_000;
+
+    // Size of the billows within a cloud.
+    public double ShapeScale { get; set; } = 3000;
+
+    public double DetailScale { get; set; } = 500;
+
+    // Extinction per metre inside a dense cloud.
+    public double Extinction { get; set; } = 0.04;
+
+    public double WindSpeed { get; set; } = 8;
 
 }
 

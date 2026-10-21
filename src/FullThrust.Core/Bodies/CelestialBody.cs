@@ -44,6 +44,8 @@ public sealed class CelestialBody {
 
     public AtmosphereData? Atmosphere { get; init; }
 
+    public CloudData? Clouds { get; init; }
+
     public IAtmosphereModel? AtmosphereModel { get; init; }
 
     public ITerrain? Terrain { get; init; }

@@ -7,7 +7,7 @@ using Brutal.VulkanApi.Abstractions;
 namespace FullThrust.Game.Rendering.Volumetrics;
 
 // Ray-marches every volume source at half resolution after the opaque scene; Composite blends the result back in.
-public sealed class VolumetricRenderer : IRenderPass, IResizeListener {
+public sealed class VolumetricRenderer : IRenderPass, IResizeListener, IFrameUniformsWriter {
 
     public const int Capacity = 64;
 
@@ -103,6 +103,8 @@ public sealed class VolumetricRenderer : IRenderPass, IResizeListener {
 
         CompositePass = new Composite(this, shaders, frames.SetLayout);
 
+        frames.WriteImage(GlobalBindings.CloudNoise, _noise.Shape, _noise.Sampler, VkImageLayout.General);
+
     }
 
     public string Name => "Volumetrics";
@@ -117,6 +119,20 @@ public sealed class VolumetricRenderer : IRenderPass, IResizeListener {
     public IRenderPass CompositePass { get; }
 
     public void AddSource(IVolumeSource source) => _sources.Add(source);
+
+    public void Fill(ref FrameUniforms uniforms, bool enabled) {
+
+        foreach (var source in _sources) {
+
+            if (source is IFrameUniformsWriter writer) {
+
+                writer.Fill(ref uniforms, enabled);
+
+            }
+
+        }
+
+    }
 
     private static VkExtent2D Half(VkExtent2D extent) => new() { Width = Math.Max(1, (extent.Width + 1) / 2), Height = Math.Max(1, (extent.Height + 1) / 2) };
 

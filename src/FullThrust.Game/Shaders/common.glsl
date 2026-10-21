@@ -47,6 +47,11 @@ layout(set = 0, binding = 0) uniform Frame {
     // Width, height and their reciprocals.
     vec4 viewport;
 
+    // Nearest cloud layer for shadows: centre xyz and inner radius w; outer radius, coverage, 1 / weather scale and drift; world-to-body rotation.
+    vec4 cloudShell;
+    vec4 cloudWeather;
+    vec4 cloudRotation;
+
 } frame;
 
 layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
@@ -56,8 +61,11 @@ layout(set = 0, binding = 4) uniform sampler2D multiScatterLut;
 layout(set = 0, binding = 5) uniform sampler2D skyViewLut;
 layout(set = 0, binding = 6) uniform sampler2D irradianceLut;
 layout(set = 0, binding = 7) uniform sampler3D aerialPerspective;
+layout(set = 0, binding = 8) uniform sampler3D cloudNoise;
 
 const float PI = 3.14159265359;
+
+#include "remap.glsl"
 
 #include "atmosphere.glsl"
 
@@ -229,7 +237,7 @@ float SampleCascade(int cascade, vec3 worldPosition, vec3 normal) {
 }
 
 // Sun visibility from the cascades; the last tenth of each cascade blends into the next so seams do not show.
-float SunShadow(vec3 worldPosition, vec3 normal) {
+float CascadeShadow(vec3 worldPosition, vec3 normal) {
 
     int count = int(frame.shadowParams.x);
 
@@ -304,5 +312,59 @@ vec4 SceneOutput(vec3 radiance, vec3 worldPosition, vec2 fragCoord) {
     }
 
     return vec4(Expose(ApplyAerialPerspective(radiance, worldPosition, fragCoord)), 1.0);
+
+}
+
+vec3 QuaternionRotate(vec4 q, vec3 v) {
+
+    vec3 t = 2.0 * cross(q.xyz, v);
+
+    return v + q.w * t + cross(q.xyz, t);
+
+}
+
+// Cloud coverage at a body-fixed point: local weather thinned or thickened by systems a thousand kilometres across.
+float CloudWeather(sampler3D noise, vec3 body, float inverseScale, float drift, float coverage) {
+
+    vec3 coord = body * inverseScale + vec3(drift, 0.0, 0.0);
+    float weather = texture(noise, coord).r * 0.65 + texture(noise, coord * 0.27 + 0.31).g * 0.35;
+    float systems = texture(noise, coord * 0.067 + 0.53).g;
+    float local = clamp(coverage * (0.25 + 1.5 * smoothstep(0.25, 0.75, systems)), 0.0, 1.0);
+
+    return clamp(Remap(weather, 1.0 - local, 1.0, 0.0, 1.0), 0.0, 1.0);
+
+}
+
+// Sunlight left after crossing the middle of the cloud layer above a point.
+float CloudShadow(vec3 worldPosition) {
+
+    if (frame.cloudShell.w <= 0.0) {
+
+        return 1.0;
+
+    }
+
+    vec3 relative = worldPosition - frame.cloudShell.xyz;
+    float middle = (frame.cloudShell.w + frame.cloudWeather.x) * 0.5;
+
+    float near;
+    float far;
+
+    if (dot(relative, relative) > middle * middle || !RaySphere(relative, frame.sunDirection.xyz, middle, near, far) || far <= 0.0) {
+
+        return 1.0;
+
+    }
+
+    vec3 body = QuaternionRotate(frame.cloudRotation, relative + frame.sunDirection.xyz * far);
+
+    return 1.0 - 0.85 * smoothstep(0.0, 0.5, CloudWeather(cloudNoise, body, frame.cloudWeather.z, frame.cloudWeather.w, frame.cloudWeather.y));
+
+}
+
+// Sun visibility at a surface: shadow cascades and the clouds overhead.
+float SunShadow(vec3 worldPosition, vec3 normal) {
+
+    return CascadeShadow(worldPosition, normal) * CloudShadow(worldPosition);
 
 }

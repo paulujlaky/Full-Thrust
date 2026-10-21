@@ -123,6 +123,7 @@ public sealed class GameApp : IDisposable {
     private AtmosphereRenderer? _atmosphere;
     private VolumetricRenderer? _volumetrics;
     private PlumeSource? _plumes;
+    private CloudSource? _clouds;
 
     private readonly World _world = new();
     private readonly SystemScheduler _systems = new();
@@ -317,6 +318,9 @@ public sealed class GameApp : IDisposable {
 
         _plumes = new PlumeSource(_world, _origin, _parts, Path.Combine(AppContext.BaseDirectory, "data", "effects", "plumes.json"));
         _volumetrics.AddSource(_plumes);
+
+        _clouds = new CloudSource(_bodies, _origin);
+        _volumetrics.AddSource(_clouds);
 
         if (_options.DebugVolume) {
 
@@ -625,6 +629,7 @@ public sealed class GameApp : IDisposable {
         _renderer.Seconds = _clock.UniversalTime;
         _terrain?.Prepare(_camera.Camera.Position, _clock.UniversalTime);
         _atmosphere?.Update(_camera.Camera.Position, _clock.UniversalTime);
+        _clouds?.Update(_camera.Camera.Position, _clock.UniversalTime);
         _renderer.Render(size, _camera.Camera.ViewMatrix(_origin), _camera.Camera.ProjectionMatrix(aspect));
         _debugUi.EndFrame();
 

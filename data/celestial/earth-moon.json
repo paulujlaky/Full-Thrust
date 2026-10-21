@@ -32,6 +32,7 @@
         ],
         "sites": [ { "name": "Launch Complex 1", "latitudeDeg": 28.5, "longitudeDeg": 0, "radius": 160, "blend": 900, "minimumHeight": 6 } ]
       },
+      "clouds": { "baseAltitude": 1500, "thickness": 4000, "coverage": 0.45, "weatherScale": 60000, "shapeScale": 3000, "detailScale": 500, "extinction": 0.04, "windSpeed": 8 },
       "atmosphere": {
         "height": 140000,
         "surfacePressure": 101325,

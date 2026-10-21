@@ -35,6 +35,7 @@ public struct VolumePrimitive {
     // Meaning depends on the kind.
     public float4 Params0;
     public float4 Params1;
+    public float4 Params2;
 
 }
 

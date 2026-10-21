@@ -1,5 +1,7 @@
 // Periodic gradient and cellular noise for tileable 3D textures; coordinates are in cells, period in cells.
 
+#include "remap.glsl"
+
 uvec3 NoiseHash(uvec3 v) {
 
     v = v * 1664525u + 1013904223u;
@@ -102,11 +104,5 @@ float PerlinFbm(vec3 uvw, int frequency) {
     }
 
     return sum / 0.96875;
-
-}
-
-float Remap(float value, float low, float high, float newLow, float newHigh) {
-
-    return newLow + (value - low) / max(high - low, 1e-5) * (newHigh - newLow);
 
 }
