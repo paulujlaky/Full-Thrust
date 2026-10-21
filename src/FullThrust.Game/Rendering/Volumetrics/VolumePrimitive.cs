@@ -11,6 +11,7 @@ public enum VolumeKind {
     Plume,
     CloudLayer,
     Trail,
+    Shock,
 
 }
 

@@ -137,6 +137,7 @@ public sealed class GameApp : IDisposable {
     private PlumeSource? _plumes;
     private CloudSource? _clouds;
     private TrailSource? _trails;
+    private ReentrySource? _reentry;
     private ExposureController? _exposure;
     private BloomPass? _bloom;
 
@@ -339,11 +340,14 @@ public sealed class GameApp : IDisposable {
         _renderer.AddPass(_volumetrics);
         _renderer.AddPass(_volumetrics.CompositePass);
 
-        _plumes = new PlumeSource(_world, _origin, _parts, Path.Combine(AppContext.BaseDirectory, "data", "effects", "plumes.json"));
+        _plumes = new PlumeSource(_world, _origin, _volumetrics.Lights, _parts, Path.Combine(AppContext.BaseDirectory, "data", "effects", "plumes.json"));
         _volumetrics.AddSource(_plumes);
 
         _trails = new TrailSource(_world, _bodies, _origin, _plumes);
         _volumetrics.AddSource(_trails);
+
+        _reentry = new ReentrySource(_world, _origin, _volumetrics.Lights);
+        _volumetrics.AddSource(_reentry);
 
         _clouds = new CloudSource(_bodies, _origin);
         _volumetrics.AddSource(_clouds);
@@ -814,6 +818,7 @@ public sealed class GameApp : IDisposable {
         var extent = _renderer.Swapchain.Extent;
 
         Log.Info($"Smoke: GPU {extent.Width}x{extent.Height}, frame {profiler.AverageFrameMs:F2} ms");
+        Log.Info($"Smoke: volumes {_volumetrics?.VolumeCount ?? 0}, reentry glow {_reentry?.Strength ?? 0:F2}");
 
         for (var i = 0; i < _renderer.Passes.Count && i < GpuProfiler.MaxScopes; i++) {
 

@@ -13,12 +13,18 @@ public enum Scenario {
     Launchpad,
     LowOrbit,
     LunarTransfer,
+    Reentry,
 
 }
 
 public sealed class DemoScene {
 
     public const double ParkingAltitude = 200_000.0;
+
+    // A capsule returning from orbit, just above where the plasma starts to glow.
+    public const double EntryAltitude = 90_000.0;
+    public const double EntrySpeed = 7_600.0;
+    public const double EntryAngleDeg = -1.5;
 
     // A Cape Canaveral-like latitude; longitude is arbitrary on a featureless planet.
     public const double LaunchLatitudeDeg = 28.5;
@@ -141,6 +147,7 @@ public sealed class DemoScene {
 
             Scenario.Launchpad => LaunchPlacement(planet, rocket, universalTime),
             Scenario.LunarTransfer => CraftPlacement.InOrbit(System, planet, OrbitScenarios.LunarTransfer(System, Moon, parking, universalTime), universalTime),
+            Scenario.Reentry => CraftPlacement.InOrbit(System, planet, OrbitScenarios.Entry(planet.GravitationalParameter, planet.Radius + EntryAltitude, EntrySpeed, EntryAngleDeg * Math.PI / 180), universalTime),
             _ => CraftPlacement.InOrbit(System, planet, OrbitScenarios.Circular(planet.GravitationalParameter, parking), universalTime),
 
         };

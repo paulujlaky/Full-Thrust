@@ -39,7 +39,7 @@ public sealed class PlumeStylesData {
 }
 
 // Exhaust plumes for every burning engine, shaped by its nozzle and the ambient pressure.
-public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
+public sealed class PlumeSource : IVolumeSource {
 
     // Luminance of a brightness-1 plume core, in cd/m2; kerosene afterburning is about this bright.
     private const float CoreLuminance = 4.0e5f;
@@ -60,15 +60,13 @@ public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
     // Indexed by fuel resource; null where no style is defined.
     private readonly PlumeStyleData?[] _styles;
 
-    private readonly float4[] _lightPositions = new float4[LightVectors.MaxPointLights];
-    private readonly float4[] _lightIntensities = new float4[LightVectors.MaxPointLights];
+    private readonly PointLights _lights;
 
-    private int _lightCount;
-
-    public PlumeSource(World world, FloatingOrigin origin, PartCatalog parts, string stylesFile) {
+    public PlumeSource(World world, FloatingOrigin origin, PointLights lights, PartCatalog parts, string stylesFile) {
 
         _world = world;
         _origin = origin;
+        _lights = lights;
 
         var data = JsonSerializer.Deserialize<PlumeStylesData>(File.ReadAllText(stylesFile), Options) ?? new PlumeStylesData();
 
@@ -94,7 +92,6 @@ public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
         var flights = _world.Store<FlightState>();
 
         Count = 0;
-        _lightCount = 0;
 
         foreach (var row in _world.Query<EngineState, Part>()) {
 
@@ -127,16 +124,9 @@ public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
             var length = plume.Axis.W;
 
             // The brightest third of the plume, seen side on, as a point light at its middle.
-            if (_lightCount < LightVectors.MaxPointLights) {
+            var luminance = new float3(plume.Emission.X, plume.Emission.Y, plume.Emission.Z) * (2 * exitRadius);
 
-                var luminance = new float3(plume.Emission.X, plume.Emission.Y, plume.Emission.Z) * (2 * exitRadius);
-                var position = plume.Params0.XYZ + plume.Axis.XYZ * (length * 0.15f);
-
-                _lightPositions[_lightCount] = new float4(position, exitRadius * 2);
-                _lightIntensities[_lightCount] = new float4(luminance * (length * 0.3f * 2 * exitRadius), 0);
-                _lightCount++;
-
-            }
+            _lights.Add(plume.Params0.XYZ + plume.Axis.XYZ * (length * 0.15f), exitRadius * 2, luminance * (length * 0.3f * 2 * exitRadius));
 
             AddSteam(volumes, flight, craft.Position, exit, axis, exitRadius, length, (float)engine.Pump);
 
@@ -228,21 +218,6 @@ public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
             Params0 = new float4(radius * 0.6f, 0.37f, 0.11f, 0.73f),
 
         });
-
-    }
-
-    public void Fill(ref FrameUniforms uniforms, bool enabled) {
-
-        var count = enabled && Visible ? _lightCount : 0;
-
-        for (var i = 0; i < count; i++) {
-
-            uniforms.LightPositions[i] = _lightPositions[i];
-            uniforms.LightIntensities[i] = _lightIntensities[i];
-
-        }
-
-        uniforms.LightCount = new float4(count, 0, 0, 0);
 
     }
 

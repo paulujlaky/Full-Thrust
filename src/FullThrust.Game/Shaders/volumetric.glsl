@@ -4,6 +4,7 @@ const int VolumeNoiseSphere = 1;
 const int VolumePlume = 2;
 const int VolumeCloudLayer = 3;
 const int VolumeTrail = 4;
+const int VolumeShock = 5;
 
 // Metres per period of the noise in exhaust trails; matches TrailSource.NoiseScale.
 const float TrailNoiseScale = 40.0;
@@ -299,7 +300,48 @@ VolumeSample Trail(VolumePrimitive v, vec3 p) {
 
 }
 
+// Bow shock: a glowing paraboloid from params0 (stagnation point, nose radius) opening down axis.xyz for axis.w metres, hot gas filling it.
+VolumeSample Shock(VolumePrimitive v, vec3 p) {
+
+    VolumeSample s;
+
+    s.extinction = 0.0;
+    s.emission = vec3(0.0);
+
+    vec3 offset = p - v.params0.xyz;
+    float nose = v.params0.w;
+    float x = dot(offset, v.axis.xyz);
+
+    if (x < -nose * 0.5 || x > v.axis.w) {
+
+        return s;
+
+    }
+
+    float r = length(offset - v.axis.xyz * x);
+    float front = sqrt(2.0 * nose * max(x, 0.0));
+    float thickness = nose * 0.3 + x * 0.06;
+
+    // The shock front glows hardest, and the compressed gas behind it fades downstream; the flow tears it into flickering streaks.
+    float sheet = exp(-pow((r - front) / thickness, 2.0));
+    float inside = 1.0 - smoothstep(front - thickness, front + thickness, r);
+    float streaks = texture(shapeNoise, vec3(r / (nose * 1.5), x / (nose * 6.0) - frame.exposure.w * 2.0, 0.37)).r;
+    float glow = (sheet + 0.05 * inside) * exp(-max(x, 0.0) / (nose * 2.0)) * (0.5 + streaks);
+
+    s.emission = v.emission.rgb * glow;
+    s.extinction = v.medium.w * glow;
+
+    return s;
+
+}
+
 VolumeSample SampleVolume(VolumePrimitive v, vec3 p) {
+
+    if (v.kind.x == VolumeShock) {
+
+        return Shock(v, p);
+
+    }
 
     if (v.kind.x == VolumeTrail) {
 
@@ -434,9 +476,11 @@ void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, fl
 
         vec3 source = albedo * s.extinction * (scattered + ambient) + s.emission;
         float stepTransmittance = exp(-s.extinction * dt);
-        float extinction = max(s.extinction, 1e-6);
 
-        result.luminance += result.transmittance * source * (1.0 - stepTransmittance) / extinction;
+        // Light added across the step; in a nearly clear glowing gas it tends to the step length rather than vanishing.
+        float span = s.extinction * dt > 1e-4 ? (1.0 - stepTransmittance) / s.extinction : dt;
+
+        result.luminance += result.transmittance * source * span;
         result.depth += result.transmittance * (1.0 - stepTransmittance) * t;
         result.transmittance *= stepTransmittance;
 

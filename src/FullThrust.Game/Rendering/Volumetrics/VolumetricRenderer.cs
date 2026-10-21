@@ -164,12 +164,17 @@ public sealed class VolumetricRenderer : IRenderPass, IResizeListener, IFrameUni
 
     public VolumeNoise Noise => _noise;
 
+    // Emitters add lights while collecting; they reach shaders in the next frame's uniforms.
+    public PointLights Lights { get; } = new();
+
     // Register with the renderer after this pass.
     public IRenderPass CompositePass { get; }
 
     public void AddSource(IVolumeSource source) => _sources.Add(source);
 
     public void Fill(ref FrameUniforms uniforms, bool enabled) {
+
+        Lights.Fill(ref uniforms, enabled);
 
         foreach (var source in _sources) {
 

@@ -21,6 +21,18 @@ public static class OrbitScenarios {
 
     }
 
+
+    // At a radius with a speed and a flight-path angle to the local horizontal, negative descending, e.g. a capsule meeting the upper atmosphere.
+    public static StateVector Entry(double mu, double radius, double speed, double flightPathAngle) {
+
+        var circular = Circular(mu, radius);
+        var up = double3.Normalize(circular.Position);
+        var along = double3.Normalize(circular.Velocity);
+
+        return new StateVector(circular.Position, (along * Math.Cos(flightPathAngle) + up * Math.Sin(flightPathAngle)) * speed);
+
+    }
+
     // Hohmann-like transfer in the moon's orbital plane, timed so apoapsis meets the moon.
     public static StateVector LunarTransfer(CelestialSystem system, CelestialBody moon, double parkingRadius, double universalTime, double apoapsisOffset = -12_000_000) {
 
