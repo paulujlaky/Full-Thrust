@@ -67,6 +67,8 @@ layout(set = 0, binding = 5) uniform sampler2D skyViewLut;
 layout(set = 0, binding = 6) uniform sampler2D irradianceLut;
 layout(set = 0, binding = 7) uniform sampler3D aerialPerspective;
 layout(set = 0, binding = 8) uniform sampler3D cloudNoise;
+layout(set = 0, binding = 9) uniform sampler2D skyShafts;
+layout(set = 0, binding = 10) uniform sampler2D cloudShadowMap;
 
 const float PI = 3.14159265359;
 
@@ -381,7 +383,39 @@ float CloudWeather(sampler3D noise, vec3 body, float inverseScale, float drift, 
 
 }
 
-// Sunlight left after crossing the middle of the cloud layer above a point.
+// Side of the square the cloud shadow map covers across the sunlight.
+const float CloudShadowExtent = 64000.0;
+const float CloudShadowFadeStart = 20000.0;
+const float CloudShadowFadeEnd = 40000.0;
+
+// Centre of the cloud shadow map with u and v across the sunlight, snapped to whole texels so shadows hold still as the camera moves.
+vec3 CloudShadowCenter(out vec3 u, out vec3 v) {
+
+    vec3 sun = frame.sunDirection.xyz;
+    vec3 side = abs(sun.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+
+    u = normalize(cross(sun, side));
+    v = cross(sun, u);
+
+    vec3 camera = frame.cameraPosition.xyz - frame.cloudShell.xyz;
+    float texel = CloudShadowExtent / float(textureSize(cloudShadowMap, 0).x);
+    vec2 snapped = floor(vec2(dot(camera, u), dot(camera, v)) / texel) * texel;
+
+    return frame.cloudShell.xyz + u * snapped.x + v * snapped.y;
+
+}
+
+vec2 CloudShadowUv(vec3 worldPosition) {
+
+    vec3 u;
+    vec3 v;
+    vec3 offset = worldPosition - CloudShadowCenter(u, v);
+
+    return vec2(dot(offset, u), dot(offset, v)) / CloudShadowExtent + 0.5;
+
+}
+
+// Sunlight left after crossing the cloud layer above a point: the shadow map near the camera, the weather map beyond it.
 float CloudShadow(vec3 worldPosition) {
 
     if (frame.cloudShell.w <= 0.0) {
@@ -402,9 +436,22 @@ float CloudShadow(vec3 worldPosition) {
 
     }
 
-    vec3 body = QuaternionRotate(frame.cloudRotation, relative + frame.sunDirection.xyz * far);
+    vec2 uv = CloudShadowUv(worldPosition);
+    // Far away the map's texels alias against grazing surfaces such as glittering water, so the smooth weather map takes over.
+    float distant = smoothstep(CloudShadowFadeStart, CloudShadowFadeEnd, length(worldPosition - frame.cameraPosition.xyz));
+    float edge = max(max(abs(uv.x - 0.5), abs(uv.y - 0.5)) * 2.0, distant);
+    float mapped = edge < 1.0 ? texture(cloudShadowMap, uv).r : 1.0;
 
-    return 1.0 - 0.85 * smoothstep(0.0, 0.5, CloudWeather(cloudNoise, body, frame.cloudWeather.z, frame.cloudWeather.w, frame.cloudWeather.y));
+    if (edge < 0.8) {
+
+        return mapped;
+
+    }
+
+    vec3 body = QuaternionRotate(frame.cloudRotation, relative + frame.sunDirection.xyz * far);
+    float coarse = 1.0 - 0.85 * smoothstep(0.0, 0.5, CloudWeather(cloudNoise, body, frame.cloudWeather.z, frame.cloudWeather.w, frame.cloudWeather.y));
+
+    return mix(mapped, coarse, smoothstep(0.8, 1.0, edge));
 
 }
 

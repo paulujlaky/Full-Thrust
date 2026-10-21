@@ -197,21 +197,29 @@ struct ScatteringResult {
 
 };
 
-// One segment of length dt around p, added to a running integral.
-void ScatterStep(vec3 p, float dt, vec3 sunDirection, float rayleighPhase, float miePhase, inout ScatteringResult result) {
+// One segment of length dt around p added to a running integral, direct sunlight dimmed by shadow; the single scattering it removed goes to lost.
+void ShadowedScatterStep(vec3 p, float dt, vec3 sunDirection, float rayleighPhase, float miePhase, float visibility, inout ScatteringResult result, inout vec3 lost) {
 
     float r = length(p);
     float sunCos = dot(sunDirection, p / r);
 
     Medium m = SampleMedium(r - BottomRadius());
     vec3 stepTransmittance = exp(-m.extinction * dt);
+    vec3 weight = result.transmittance * (1.0 - stepTransmittance) / max(m.extinction, vec3(1e-12));
 
-    vec3 sun = Transmittance(r, sunCos) * SunVisibility(r, sunCos);
-    vec3 source = sun * (m.rayleighScattering * rayleighPhase + m.mieScattering * miePhase) + MultipleScattering(r, sunCos) * m.scattering;
-    vec3 integrated = (source - source * stepTransmittance) / max(m.extinction, vec3(1e-12));
+    vec3 single = Transmittance(r, sunCos) * SunVisibility(r, sunCos) * (m.rayleighScattering * rayleighPhase + m.mieScattering * miePhase);
 
-    result.luminance += result.transmittance * integrated;
+    result.luminance += weight * (single * visibility + MultipleScattering(r, sunCos) * m.scattering);
     result.transmittance *= stepTransmittance;
+    lost += weight * single * (1.0 - visibility);
+
+}
+
+void ScatterStep(vec3 p, float dt, vec3 sunDirection, float rayleighPhase, float miePhase, inout ScatteringResult result) {
+
+    vec3 lost = vec3(0.0);
+
+    ShadowedScatterStep(p, dt, sunDirection, rayleighPhase, miePhase, 1.0, result, lost);
 
 }
 

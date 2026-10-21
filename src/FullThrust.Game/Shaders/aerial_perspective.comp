@@ -5,8 +5,13 @@
 layout(local_size_x = 8, local_size_y = 8) in;
 
 layout(set = 1, binding = 0, rgba16f) uniform writeonly image3D target;
+layout(set = 1, binding = 1, rgba16f) uniform writeonly image2D shafts;
 
 const int StepsPerSlice = 2;
+
+// Far slices step further than cloud shadows are wide, so their shadow fades out rather than aliasing.
+const float ShadowFadeStart = 40000.0;
+const float ShadowFadeEnd = 120000.0;
 
 // One thread per screen column marches its view ray once, storing in-scattering and mean transmittance at each slice end.
 void main() {
@@ -40,6 +45,7 @@ void main() {
         far = min(far, groundNear);
 
     }
+
     float maxDistance = frame.aerialPerspective.x;
 
     float cosTheta = dot(direction, sunDirection);
@@ -51,6 +57,7 @@ void main() {
     result.luminance = vec3(0.0);
     result.transmittance = vec3(1.0);
 
+    vec3 lost = vec3(0.0);
     float start = 0.0;
 
     for (int k = 0; k < size.z; k++) {
@@ -67,7 +74,11 @@ void main() {
 
             for (int i = 0; i < StepsPerSlice; i++) {
 
-                ScatterStep(origin + direction * (a + (float(i) + 0.5) * dt), dt, sunDirection, rayleighPhase, miePhase, result);
+                float t = a + (float(i) + 0.5) * dt;
+                vec3 p = origin + direction * t;
+                float visibility = mix(CloudShadow(p + frame.atmosphereCenter.xyz), 1.0, smoothstep(ShadowFadeStart, ShadowFadeEnd, t));
+
+                ShadowedScatterStep(p, dt, sunDirection, rayleighPhase, miePhase, visibility, result, lost);
 
             }
 
@@ -78,5 +89,8 @@ void main() {
         start = end;
 
     }
+
+    // The sky-view table knows nothing of clouds, so the sky subtracts what their shadows took from this column.
+    imageStore(shafts, column, vec4(lost, 0.0));
 
 }

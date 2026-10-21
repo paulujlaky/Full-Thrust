@@ -40,8 +40,10 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
     private readonly CelestialSystem _system;
     private readonly FloatingOrigin _origin;
 
+    private const int MaxTables = 5;
+    private const int MaxOutputs = 6;
+
     private readonly VkSampler _sampler;
-    private readonly VkDescriptorSetLayout _setLayout;
     private readonly VkDescriptorPool _pool;
 
     private readonly Table _transmittance;
@@ -73,14 +75,16 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
 
         }, null);
 
-        _setLayout = Descriptors.CreateLayout(device, [Descriptors.Binding(0, VkDescriptorType.StorageImage, VkShaderStageFlags.ComputeBit)]);
-        _pool = Descriptors.CreatePool(device, 5, [new VkDescriptorPoolSize { Type = VkDescriptorType.StorageImage, DescriptorCount = 5 }]);
+        _pool = Descriptors.CreatePool(device, MaxTables, [new VkDescriptorPoolSize { Type = VkDescriptorType.StorageImage, DescriptorCount = MaxOutputs }]);
 
-        _transmittance = new Table(this, shaders, frames, "transmittance_lut.comp", "TransmittanceLut", 256, 64, GlobalBindings.TransmittanceLut);
-        _multiScatter = new Table(this, shaders, frames, "multiscatter_lut.comp", "MultiScatterLut", 32, 32, GlobalBindings.MultiScatterLut);
-        _irradiance = new Table(this, shaders, frames, "irradiance_lut.comp", "IrradianceLut", 64, 16, GlobalBindings.IrradianceLut);
-        _skyView = new Table(this, shaders, frames, "skyview_lut.comp", "SkyViewLut", 192, 108, GlobalBindings.SkyViewLut);
-        _aerialPerspective = new Table(this, shaders, frames, "aerial_perspective.comp", "AerialPerspective", AerialWidth, AerialHeight, GlobalBindings.AerialPerspective, AerialSlices);
+        _transmittance = new Table(this, shaders, frames, "transmittance_lut.comp", new Output("TransmittanceLut", 256, 64, 1, GlobalBindings.TransmittanceLut));
+        _multiScatter = new Table(this, shaders, frames, "multiscatter_lut.comp", new Output("MultiScatterLut", 32, 32, 1, GlobalBindings.MultiScatterLut));
+        _irradiance = new Table(this, shaders, frames, "irradiance_lut.comp", new Output("IrradianceLut", 64, 16, 1, GlobalBindings.IrradianceLut));
+        _skyView = new Table(this, shaders, frames, "skyview_lut.comp", new Output("SkyViewLut", 192, 108, 1, GlobalBindings.SkyViewLut));
+
+        _aerialPerspective = new Table(this, shaders, frames, "aerial_perspective.comp",
+            new Output("AerialPerspective", AerialWidth, AerialHeight, AerialSlices, GlobalBindings.AerialPerspective),
+            new Output("SkyShafts", AerialWidth, AerialHeight, 1, GlobalBindings.SkyShafts));
 
     }
 
@@ -218,42 +222,80 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
         _aerialPerspective.Dispose();
 
         _device.DestroyDescriptorPool(_pool, null);
-        _device.DestroyDescriptorSetLayout(_setLayout, null);
         _device.DestroySampler(_sampler, null);
 
     }
 
-    // One lookup table: its image, the kernel that fills it and the set binding the image for writing.
+    // An image a table's kernel writes at set 1 in order, and the global binding every shader samples it through.
+    private readonly record struct Output(string Name, int Width, int Height, int Depth, int Binding);
+
+    // One lookup-table kernel and the images it fills; the first output sets the dispatch size.
     private sealed class Table : IDisposable {
 
-        private readonly RenderTexture _texture;
+        private readonly DeviceEx _device;
+        private readonly RenderTexture[] _textures;
+        private readonly VkDescriptorSetLayout _layout;
         private readonly ComputeKernel _kernel;
         private readonly VkDescriptorSet _set;
 
-        public Table(AtmosphereRenderer owner, ShaderLibrary shaders, FrameResources frames, string shader, string name, int width, int height, int binding, int depth = 1) {
+        public Table(AtmosphereRenderer owner, ShaderLibrary shaders, FrameResources frames, string shader, params Output[] outputs) {
 
-            _texture = new RenderTexture(owner._device, name, VkFormat.R16G16B16A16SFloat, width, height, depth);
-            _kernel = new ComputeKernel(owner._device, shaders, shader, frames.SetLayout, owner._setLayout, ByteSize.Zero);
-            _set = Descriptors.Allocate(owner._device, owner._pool, owner._setLayout);
+            _device = owner._device;
+            _textures = new RenderTexture[outputs.Length];
 
-            Descriptors.WriteStorageImage(owner._device, _set, 0, _texture.View);
-            frames.WriteImage(binding, _texture.View, owner._sampler, VkImageLayout.General);
+            var bindings = new VkDescriptorSetLayoutBinding[outputs.Length];
+
+            for (var i = 0; i < outputs.Length; i++) {
+
+                bindings[i] = Descriptors.Binding(i, VkDescriptorType.StorageImage, VkShaderStageFlags.ComputeBit);
+
+            }
+
+            _layout = Descriptors.CreateLayout(_device, bindings);
+            _kernel = new ComputeKernel(_device, shaders, shader, frames.SetLayout, _layout, ByteSize.Zero);
+            _set = Descriptors.Allocate(_device, owner._pool, _layout);
+
+            for (var i = 0; i < outputs.Length; i++) {
+
+                var output = outputs[i];
+
+                _textures[i] = new RenderTexture(_device, output.Name, VkFormat.R16G16B16A16SFloat, output.Width, output.Height, output.Depth);
+
+                Descriptors.WriteStorageImage(_device, _set, i, _textures[i].View);
+                frames.WriteImage(output.Binding, _textures[i].View, owner._sampler, VkImageLayout.General);
+
+            }
 
         }
 
-        public void Prepare(CommandBuffer cmd) => _texture.Prepare(cmd);
+        public void Prepare(CommandBuffer cmd) {
+
+            foreach (var texture in _textures) {
+
+                texture.Prepare(cmd);
+
+            }
+
+        }
 
         // A group size of 1 dispatches one workgroup per texel.
         public void Dispatch(CommandBuffer cmd, VkDescriptorSet frameSet, int groupSize, int depth) {
 
-            _kernel.Dispatch(cmd, frameSet, _set, ComputeKernel.Groups(_texture.Width, groupSize), ComputeKernel.Groups(_texture.Height, groupSize), depth);
+            _kernel.Dispatch(cmd, frameSet, _set, ComputeKernel.Groups(_textures[0].Width, groupSize), ComputeKernel.Groups(_textures[0].Height, groupSize), depth);
 
         }
 
         public void Dispose() {
 
             _kernel.Dispose();
-            _texture.Dispose();
+
+            foreach (var texture in _textures) {
+
+                texture.Dispose();
+
+            }
+
+            _device.DestroyDescriptorSetLayout(_layout, null);
 
         }
 

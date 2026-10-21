@@ -162,6 +162,8 @@ public sealed class VolumetricRenderer : IRenderPass, IResizeListener, IFrameUni
 
     public int VolumeCount => _volumes.Count;
 
+    public VolumeNoise Noise => _noise;
+
     // Register with the renderer after this pass.
     public IRenderPass CompositePass { get; }
 

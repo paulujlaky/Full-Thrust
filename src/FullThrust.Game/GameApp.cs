@@ -329,8 +329,6 @@ public sealed class GameApp : IDisposable {
         _renderer.AddPass(_meshPass);
         _background = new BackgroundPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.Frames.SetLayout, shaders);
         _renderer.AddPass(_background);
-        _atmosphere = new AtmosphereRenderer(_vulkan.Device, shaders, _renderer.Frames, _bodies, _origin);
-        _renderer.AddPass(_atmosphere);
 
         _volumetrics = new VolumetricRenderer(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames, _origin);
         _renderer.AddPass(_volumetrics);
@@ -341,6 +339,12 @@ public sealed class GameApp : IDisposable {
 
         _clouds = new CloudSource(_bodies, _origin);
         _volumetrics.AddSource(_clouds);
+
+        // Cloud shadows come first among the preparation passes: the aerial perspective table shades its haze with them.
+        _renderer.AddPass(new CloudShadowMap(_vulkan.Device, shaders, _renderer.Frames, _volumetrics.Noise, _clouds));
+
+        _atmosphere = new AtmosphereRenderer(_vulkan.Device, shaders, _renderer.Frames, _bodies, _origin);
+        _renderer.AddPass(_atmosphere);
 
         if (_options.DebugVolume) {
 

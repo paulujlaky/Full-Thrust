@@ -263,6 +263,13 @@ void main() {
         if (r < TopRadius()) {
 
             sky = SkyViewLuminance(origin, direction, frame.sunDirection.xyz);
+
+            if (frame.aerialPerspective.z > 0.5) {
+
+                sky = max(sky - texture(skyShafts, vUv).rgb, vec3(0.0));
+
+            }
+
             transmittance = ground ? vec3(0.0) : Transmittance(r, dot(direction, origin / r));
 
         } else {

@@ -1,0 +1,74 @@
+#version 450
+
+#include "common.glsl"
+#include "volumetric.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 1, binding = 7, r16f) uniform writeonly image2D cloudShadowTarget;
+
+layout(push_constant) uniform Push {
+
+    VolumePrimitive layer;
+
+} pc;
+
+const int Steps = 24;
+
+// A grazing sun crosses hundreds of kilometres of layer; past this the light is gone anyway.
+const float MaxCrossing = 20000.0;
+
+// Each texel marches its line of sunlight through the layer on the sun side of its base and stores the transmittance.
+void main() {
+
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(cloudShadowTarget);
+
+    if (any(greaterThanEqual(texel, size))) {
+
+        return;
+
+    }
+
+    VolumePrimitive layer = pc.layer;
+
+    vec3 u;
+    vec3 v;
+    vec3 center = CloudShadowCenter(u, v);
+    vec2 offset = ((vec2(texel) + 0.5) / vec2(size) - 0.5) * CloudShadowExtent;
+
+    vec3 sun = frame.sunDirection.xyz;
+    vec3 line = center + u * offset.x + v * offset.y - layer.params0.xyz;
+
+    float outerNear;
+    float outerFar;
+    float innerNear;
+    float innerFar;
+
+    if (!RaySphere(line, sun, layer.params1.x, outerNear, outerFar)) {
+
+        imageStore(cloudShadowTarget, texel, vec4(1.0));
+
+        return;
+
+    }
+
+    float start = RaySphere(line, sun, layer.params0.w, innerNear, innerFar) ? innerFar : outerNear;
+    float end = min(outerFar, start + MaxCrossing);
+    float dt = (end - start) / float(Steps);
+    float depth = 0.0;
+
+    // Wisps are finer than a texel's worth of shadow, so the footprint is set to drop them.
+    volumeFootprint = 2.0 * CloudShadowExtent / float(size.x);
+
+    for (int i = 0; i < Steps; i++) {
+
+        vec3 p = layer.params0.xyz + line + sun * (start + (float(i) + 0.5) * dt);
+
+        depth += CloudLayer(layer, p).extinction * dt;
+
+    }
+
+    imageStore(cloudShadowTarget, texel, vec4(exp(-depth)));
+
+}
