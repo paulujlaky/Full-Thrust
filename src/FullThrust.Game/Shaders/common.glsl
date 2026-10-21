@@ -99,7 +99,7 @@ vec3 AmbientIrradiance(vec3 p, vec3 n) {
     }
 
     // ambientUp.w is the night-time floor and groundIrradiance.w the overlay's ambient scale.
-    vec3 atmosphere = AtmosphereIrradiance(p, n) * frame.groundIrradiance.w + frame.ambientUp.w;
+    vec3 atmosphere = AtmosphereIrradiance(p, n) * frame.groundIrradiance.w + vec3(0.6, 0.7, 1.0) * frame.ambientUp.w;
 
     return mix(hemisphere, atmosphere, weight);
 

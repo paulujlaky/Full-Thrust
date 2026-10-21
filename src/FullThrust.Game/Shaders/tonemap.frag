@@ -3,11 +3,13 @@
 layout(location = 0) in vec2 vUv;
 
 layout(set = 0, binding = 0) uniform sampler2D hdr;
+layout(set = 0, binding = 1) uniform sampler2D bloom;
 
 layout(push_constant) uniform Push {
 
     int tonemapper;
     float whitePoint;
+    float bloomIntensity;
 
 } pc;
 
@@ -87,7 +89,8 @@ float Dither(vec2 pixel) {
 
 void main() {
 
-    vec3 color = texture(hdr, vUv).rgb;
+    // Energy-conserving: bloom takes its share of the image rather than adding light.
+    vec3 color = mix(texture(hdr, vUv).rgb, texture(bloom, vUv).rgb, pc.bloomIntensity);
 
     vec3 mapped;
 

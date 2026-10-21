@@ -4,10 +4,25 @@ using Brutal.VulkanApi.Abstractions;
 
 namespace FullThrust.Game.Rendering;
 
-// A compute shader and its pipeline layout: set 0 is the frame set, set 1 the kernel's own resources.
+// A compute shader and its pipeline layout: set 0 is the frame set and set 1 the kernel's own resources, or set 0 alone when standalone.
 public sealed class ComputeKernel : IDisposable {
 
     private readonly DeviceEx _device;
+
+    private readonly bool _standalone;
+
+    public ComputeKernel(DeviceEx device, ShaderLibrary shaders, string shader, VkDescriptorSetLayout setLayout, ByteSize pushSize) {
+
+        _device = device;
+        _standalone = true;
+
+        Layout = pushSize == ByteSize.Zero
+            ? device.CreatePipelineLayout([setLayout], [], null)
+            : device.CreatePipelineLayout([setLayout], [new VkPushConstantRange { StageFlags = VkShaderStageFlags.ComputeBit, Offset = ByteSize.Zero, Size = pushSize }], null);
+
+        Pipeline = CreatePipeline(shaders, shader);
+
+    }
 
     public ComputeKernel(DeviceEx device, ShaderLibrary shaders, string shader, VkDescriptorSetLayout frameLayout, VkDescriptorSetLayout setLayout, ByteSize pushSize) {
 
@@ -17,11 +32,17 @@ public sealed class ComputeKernel : IDisposable {
             ? device.CreatePipelineLayout([frameLayout, setLayout], [], null)
             : device.CreatePipelineLayout([frameLayout, setLayout], [new VkPushConstantRange { StageFlags = VkShaderStageFlags.ComputeBit, Offset = ByteSize.Zero, Size = pushSize }], null);
 
+        Pipeline = CreatePipeline(shaders, shader);
+
+    }
+
+    private VkPipeline CreatePipeline(ShaderLibrary shaders, string shader) {
+
         var module = shaders.Load(shader);
 
         try {
 
-            Pipeline = device.CreateComputePipeline(default, new VkComputePipelineCreateInfo {
+            return _device.CreateComputePipeline(default, new VkComputePipelineCreateInfo {
 
                 Stage = Presets.ShaderStage.Compute(module),
                 Layout = Layout,
@@ -30,7 +51,7 @@ public sealed class ComputeKernel : IDisposable {
 
         } finally {
 
-            device.DestroyShaderModule(module, null);
+            _device.DestroyShaderModule(module, null);
 
         }
 
@@ -60,6 +81,15 @@ public sealed class ComputeKernel : IDisposable {
     private void Bind(CommandBuffer cmd, VkDescriptorSet frameSet, VkDescriptorSet set) {
 
         cmd.BindPipeline(VkPipelineBindPoint.Compute, Pipeline);
+
+        if (_standalone) {
+
+            cmd.BindDescriptorSet(VkPipelineBindPoint.Compute, Layout, 0, set, []);
+
+            return;
+
+        }
+
         cmd.BindDescriptorSet(VkPipelineBindPoint.Compute, Layout, 0, frameSet, []);
         cmd.BindDescriptorSet(VkPipelineBindPoint.Compute, Layout, 1, set, []);
 

@@ -24,14 +24,16 @@ public sealed class SceneLighting {
 
     private static readonly double3 SkyTint = new(0.45, 0.62, 1.0);
 
+    private static readonly double3 NightTint = new(0.6, 0.7, 1.0);
+
     public float Ev100 { get; set; } = 15.0f;
 
     public Tonemapper Tonemapper { get; set; } = Tonemapper.Aces;
 
     public float AmbientScale { get; set; } = 1.0f;
 
-    // Floor for the dark side so silhouettes stay readable; physically this is starlight.
-    public float MinimumAmbientLux { get; set; } = 40.0f;
+    // Starlight and airglow on the dark side; auto exposure brings it up to a readable level.
+    public float MinimumAmbientLux { get; set; } = 0.5f;
 
     public bool OverrideSun { get; set; }
 
@@ -108,7 +110,7 @@ public sealed class SceneLighting {
         var view = body.Radius / distance;
         var planetshine = PlanetAlbedo * sun.Illuminance * Math.Max(0, sunHeight * 0.5 + 0.25) * view * view;
         var ground = new double3(planetshine) + sky * PlanetAlbedo;
-        var floor = new double3(MinimumAmbientLux);
+        var floor = NightTint * MinimumAmbientLux;
 
         SkyIrradiance = SpaceMath.ToFloat((sky + floor) * AmbientScale);
         GroundIrradiance = SpaceMath.ToFloat((ground + floor * 0.5) * AmbientScale);

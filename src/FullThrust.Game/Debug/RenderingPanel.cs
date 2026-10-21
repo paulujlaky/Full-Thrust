@@ -16,8 +16,10 @@ public sealed class RenderingPanel : IDebugPanel {
     private readonly AmbientOcclusion _occlusion;
     private readonly BackgroundPass _background;
     private readonly AtmosphereRenderer _atmosphere;
+    private readonly ExposureController _exposure;
+    private readonly BloomPass _bloom;
 
-    public RenderingPanel(TerrainRenderer terrain, MeshPass meshes, ModelLibrary models, SceneLighting lighting, ShadowMaps shadows, AmbientOcclusion occlusion, BackgroundPass background, AtmosphereRenderer atmosphere) {
+    public RenderingPanel(TerrainRenderer terrain, MeshPass meshes, ModelLibrary models, SceneLighting lighting, ShadowMaps shadows, AmbientOcclusion occlusion, BackgroundPass background, AtmosphereRenderer atmosphere, ExposureController exposure, BloomPass bloom) {
 
         _terrain = terrain;
         _meshes = meshes;
@@ -27,12 +29,55 @@ public sealed class RenderingPanel : IDebugPanel {
         _occlusion = occlusion;
         _background = background;
         _atmosphere = atmosphere;
+        _exposure = exposure;
+        _bloom = bloom;
 
     }
 
     public string Title => "Rendering";
 
     public bool Visible { get; set; } = true;
+
+    private void DrawCamera() {
+
+        ImGui.SeparatorText("Camera"u8);
+
+        var automatic = _exposure.Automatic;
+
+        if (ImGui.Checkbox("Auto exposure"u8, ref automatic)) {
+
+            _exposure.Automatic = automatic;
+
+        }
+
+        ImGui.SameLine();
+        ImGui.Text($"EV100 {_lighting.Ev100:F1}, scene {_exposure.MeasuredLuminance:G3} cd/m2");
+
+        var compensation = _exposure.Compensation;
+
+        if (ImGui.SliderFloat("Compensation"u8, ref compensation, -4.0f, 4.0f, "%.1f EV"u8)) {
+
+            _exposure.Compensation = compensation;
+
+        }
+
+        var adaptation = _exposure.AdaptationTime;
+
+        if (ImGui.SliderFloat("Adaptation"u8, ref adaptation, 0.05f, 5.0f, "%.2f s"u8)) {
+
+            _exposure.AdaptationTime = adaptation;
+
+        }
+
+        var bloom = _bloom.Intensity;
+
+        if (ImGui.SliderFloat("Bloom"u8, ref bloom, 0.0f, 0.3f, "%.3f"u8)) {
+
+            _bloom.Intensity = bloom;
+
+        }
+
+    }
 
     private void DrawBackground() {
 
@@ -230,6 +275,7 @@ public sealed class RenderingPanel : IDebugPanel {
         ImGui.Text($"Sun ({_lighting.SunDirection.X:F2}, {_lighting.SunDirection.Y:F2}, {_lighting.SunDirection.Z:F2})  EV100 {_lighting.Ev100:F1}");
         ImGui.Text($"Sky {_lighting.SkyIrradiance.Y:F0} lx  ground {_lighting.GroundIrradiance.Y:F0} lx");
 
+        DrawCamera();
         DrawShadows();
         DrawOcclusion();
         DrawBackground();

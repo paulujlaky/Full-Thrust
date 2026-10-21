@@ -1,0 +1,44 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D lower;
+layout(set = 0, binding = 1) uniform sampler2D current;
+layout(set = 0, binding = 2, rgba16f) uniform writeonly image2D target;
+
+// x: radius of the tent filter in lower-level texels.
+layout(push_constant) uniform Push {
+
+    vec4 params;
+
+} pc;
+
+// 3x3 tent upsample of the level below, added to this level's downsample.
+void main() {
+
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(target);
+
+    if (any(greaterThanEqual(pixel, size))) {
+
+        return;
+
+    }
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    vec2 r = pc.params.x / vec2(textureSize(lower, 0));
+
+    vec3 sum = texture(lower, uv + vec2(-r.x, -r.y)).rgb;
+
+    sum += texture(lower, uv + vec2(0.0, -r.y)).rgb * 2.0;
+    sum += texture(lower, uv + vec2(r.x, -r.y)).rgb;
+    sum += texture(lower, uv + vec2(-r.x, 0.0)).rgb * 2.0;
+    sum += texture(lower, uv).rgb * 4.0;
+    sum += texture(lower, uv + vec2(r.x, 0.0)).rgb * 2.0;
+    sum += texture(lower, uv + vec2(-r.x, r.y)).rgb;
+    sum += texture(lower, uv + vec2(0.0, r.y)).rgb * 2.0;
+    sum += texture(lower, uv + vec2(r.x, r.y)).rgb;
+
+    imageStore(target, pixel, vec4(sum / 16.0 + texelFetch(current, pixel, 0).rgb, 1.0));
+
+}

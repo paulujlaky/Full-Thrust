@@ -124,6 +124,8 @@ public sealed class GameApp : IDisposable {
     private VolumetricRenderer? _volumetrics;
     private PlumeSource? _plumes;
     private CloudSource? _clouds;
+    private ExposureController? _exposure;
+    private BloomPass? _bloom;
 
     private readonly World _world = new();
     private readonly SystemScheduler _systems = new();
@@ -242,7 +244,7 @@ public sealed class GameApp : IDisposable {
         _debugUi.AddPanel(new TimeWarpPanel(_warp, _clock));
         _debugUi.AddPanel(new ScenarioPanel(ResetScenario, _scene, _orbitDraw, _craftDraw, _camera, CaptureNow));
         _debugUi.AddPanel(new CraftPanel(_world, _focus, _bodies, _parts, _physicsFrame, _physics, _flight));
-        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting, _renderer.Shadows, _occlusion!, _background!, _atmosphere!));
+        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting, _renderer.Shadows, _occlusion!, _background!, _atmosphere!, _exposure!, _bloom!));
         _debugUi.AddPanel(new ControlsPanel());
 
         _origin.ShiftTo(_world.Get<Transform>(_scene.Craft).Position);
@@ -338,7 +340,12 @@ public sealed class GameApp : IDisposable {
         _renderer.Shadows.AddCaster(_meshPass);
         _renderer.AddPass(shapes);
         _renderer.AddPass(new DebugLinePass(_vulkan.Device, _renderer.SceneRenderPass, shaders, _lines));
-        _renderer.AddPass(new TonemapPass(_vulkan.Device, _renderer.Swapchain.RenderPass, shaders, _renderer.Hdr, _lighting));
+        _exposure = new ExposureController(_vulkan.Device, shaders, _renderer.Hdr, _lighting) { Automatic = double.IsNaN(_options.Ev100) };
+        _bloom = new BloomPass(_vulkan.Device, shaders, _renderer.Hdr);
+
+        _renderer.AddPass(_exposure);
+        _renderer.AddPass(_bloom);
+        _renderer.AddPass(new TonemapPass(_vulkan.Device, _renderer.Swapchain.RenderPass, shaders, _renderer.Hdr, _lighting, _bloom));
         _renderer.AddPass(new ImGuiPass(_debugUi.Renderer));
 
         return shapes;
@@ -720,6 +727,7 @@ public sealed class GameApp : IDisposable {
 
         }
 
+        Log.Info($"Smoke: exposure EV100 {_lighting.Ev100:F2}, measured {_exposure?.MeasuredLuminance:G3} cd/m2");
         Log.Info($"Smoke: {_renderer.FramesRendered} frames presented, {_renderer.Capture.CapturesWritten} captures, {_lines.Count} line vertices ({_lines.Dropped} dropped)");
 
     }

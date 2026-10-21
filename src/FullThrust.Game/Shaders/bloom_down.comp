@@ -1,0 +1,76 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D source;
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D target;
+
+// x: 1 on the first level, which averages with Karis weights so single bright pixels do not flicker.
+layout(push_constant) uniform Push {
+
+    vec4 params;
+
+} pc;
+
+float KarisWeight(vec3 c) {
+
+    return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)));
+
+}
+
+// Jimenez's 13-tap downsample from Call of Duty: Advanced Warfare.
+void main() {
+
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(target);
+
+    if (any(greaterThanEqual(pixel, size))) {
+
+        return;
+
+    }
+
+    vec2 texel = 1.0 / vec2(textureSize(source, 0));
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+
+    vec3 a = texture(source, uv + texel * vec2(-2.0, -2.0)).rgb;
+    vec3 b = texture(source, uv + texel * vec2(0.0, -2.0)).rgb;
+    vec3 c = texture(source, uv + texel * vec2(2.0, -2.0)).rgb;
+    vec3 d = texture(source, uv + texel * vec2(-2.0, 0.0)).rgb;
+    vec3 e = texture(source, uv).rgb;
+    vec3 f = texture(source, uv + texel * vec2(2.0, 0.0)).rgb;
+    vec3 g = texture(source, uv + texel * vec2(-2.0, 2.0)).rgb;
+    vec3 h = texture(source, uv + texel * vec2(0.0, 2.0)).rgb;
+    vec3 i = texture(source, uv + texel * vec2(2.0, 2.0)).rgb;
+    vec3 j = texture(source, uv + texel * vec2(-1.0, -1.0)).rgb;
+    vec3 k = texture(source, uv + texel * vec2(1.0, -1.0)).rgb;
+    vec3 l = texture(source, uv + texel * vec2(-1.0, 1.0)).rgb;
+    vec3 m = texture(source, uv + texel * vec2(1.0, 1.0)).rgb;
+
+    vec3 g0 = (j + k + l + m) * 0.25;
+    vec3 g1 = (a + b + d + e) * 0.25;
+    vec3 g2 = (b + c + e + f) * 0.25;
+    vec3 g3 = (d + e + g + h) * 0.25;
+    vec3 g4 = (e + f + h + i) * 0.25;
+
+    vec3 color;
+
+    if (pc.params.x > 0.5) {
+
+        float w0 = KarisWeight(g0) * 0.5;
+        float w1 = KarisWeight(g1) * 0.125;
+        float w2 = KarisWeight(g2) * 0.125;
+        float w3 = KarisWeight(g3) * 0.125;
+        float w4 = KarisWeight(g4) * 0.125;
+
+        color = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);
+
+    } else {
+
+        color = g0 * 0.5 + (g1 + g2 + g3 + g4) * 0.125;
+
+    }
+
+    imageStore(target, pixel, vec4(min(color, vec3(64000.0)), 1.0));
+
+}
