@@ -57,6 +57,12 @@ options.ShowTerrainLevels = args.Contains("--terrain-levels");
 options.DebugView = Value("--debug-view");
 options.Ev100 = Number("--ev100", double.NaN);
 options.Sun = Value("--sun");
+
+if (Value("--eclipse") is { } eclipse) {
+
+    options.Eclipse = Enum.Parse<FullThrust.Game.Rendering.EclipseTest>(eclipse, ignoreCase: true);
+
+}
 options.DebugVolume = args.Contains("--debug-volume");
 options.CameraSite = Value("--camera-site");
 options.Rocket = Value("--rocket");

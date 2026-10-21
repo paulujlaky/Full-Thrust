@@ -345,12 +345,51 @@ vec3 SkyViewLuminance(vec3 origin, vec3 direction, vec3 sunDirection) {
 
 }
 
+// Sunlight left at a point once bodies in frame.occluders cover part of the sun's disc; a body with air leaks reddened light into its umbra.
+vec3 EclipseLight(vec3 worldPosition) {
+
+    vec3 light = vec3(1.0);
+    float sunRadius = acos(frame.sunDirection.w);
+
+    for (int i = 0; i < 2; i++) {
+
+        vec4 occluder = frame.occluders[i];
+
+        if (occluder.w <= 0.0) {
+
+            continue;
+
+        }
+
+        vec3 toBody = frame.cameraPosition.xyz + occluder.xyz - worldPosition;
+        float distance = length(toBody);
+
+        // A body shades what stands on it or flies just above through its own horizon instead.
+        if (distance < occluder.w * 1.02) {
+
+            continue;
+
+        }
+
+        float bodyRadius = asin(occluder.w / distance);
+        float separation = 2.0 * asin(min(length(toBody / distance - frame.sunDirection.xyz) * 0.5, 1.0));
+        float overlap = 1.0 - smoothstep(abs(bodyRadius - sunRadius), bodyRadius + sunRadius, separation);
+        float covered = overlap * min(1.0, bodyRadius * bodyRadius / (sunRadius * sunRadius));
+
+        light *= mix(vec3(1.0), frame.occluderGlow[i].rgb, covered);
+
+    }
+
+    return light;
+
+}
+
 // Sunlight reaching a point through the atmosphere, in lux.
 vec3 SunIlluminanceAt(vec3 worldPosition) {
 
     if (!AtmosphereEnabled()) {
 
-        return frame.sunIlluminance.rgb;
+        return frame.sunIlluminance.rgb * EclipseLight(worldPosition);
 
     }
 
@@ -358,7 +397,7 @@ vec3 SunIlluminanceAt(vec3 worldPosition) {
     float r = length(p);
     float sunCos = dot(p / r, frame.sunDirection.xyz);
 
-    return frame.sunIlluminance.rgb * Transmittance(r, sunCos) * SunVisibility(r, sunCos);
+    return frame.sunIlluminance.rgb * Transmittance(r, sunCos) * SunVisibility(r, sunCos) * EclipseLight(worldPosition);
 
 }
 
@@ -428,6 +467,7 @@ ScatteringResult MarchToSurface(vec3 origin, vec3 direction, float distance) {
     float rayleighPhase = RayleighPhase(cosTheta);
     float miePhase = MiePhase(cosTheta);
     float previous = 0.0;
+    vec3 lost = vec3(0.0);
 
     for (int i = 1; i <= Samples; i++) {
 
@@ -435,7 +475,10 @@ ScatteringResult MarchToSurface(vec3 origin, vec3 direction, float distance) {
         float t = 1.0 - (1.0 - u) * (1.0 - u) * (1.0 - u);
         float dt = (t - previous) * span;
 
-        ScatterStep(origin + direction * (start + (previous + t) * 0.5 * span), dt, frame.sunDirection.xyz, rayleighPhase, miePhase, result);
+        vec3 p = origin + direction * (start + (previous + t) * 0.5 * span);
+        float eclipse = dot(EclipseLight(p + frame.atmosphereCenter.xyz), vec3(1.0 / 3.0));
+
+        ShadowedScatterStep(p, dt, frame.sunDirection.xyz, rayleighPhase, miePhase, eclipse, result, lost);
 
         previous = t;
 

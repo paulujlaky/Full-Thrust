@@ -65,6 +65,8 @@ public sealed class GameOptions {
     // "azimuth,elevation" in degrees relative to the local horizon.
     public string? Sun;
 
+    public EclipseTest Eclipse;
+
     // Puts a ball of smoke beside the camera target.
     public bool DebugVolume;
 
@@ -219,6 +221,7 @@ public sealed class GameApp : IDisposable {
 
         _vulkan = new VulkanContext(_window, options.Validation);
         _lighting.Headlight = options.Headlight;
+        _lighting.Eclipse = options.Eclipse;
 
         if (options.Sun?.Split(',') is [var azimuth, var elevation]) {
 

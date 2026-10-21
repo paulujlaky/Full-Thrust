@@ -270,6 +270,9 @@ void main() {
 
             }
 
+            // Under a moon's shadow the whole sky dims with the sun.
+            sky *= EclipseLight(frame.cameraPosition.xyz);
+
             transmittance = ground ? vec3(0.0) : Transmittance(r, dot(direction, origin / r));
 
         } else {

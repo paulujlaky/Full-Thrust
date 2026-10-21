@@ -4,6 +4,14 @@ using FullThrust.Core.Space;
 
 namespace FullThrust.Game.Rendering;
 
+public enum EclipseTest {
+
+    None,
+    Solar,
+    Lunar,
+
+}
+
 public enum Tonemapper {
 
     Aces,
@@ -26,6 +34,12 @@ public sealed class SceneLighting {
 
     private static readonly double3 NightTint = new(0.6, 0.7, 1.0);
 
+    // Fraction of sunlight refracted through a planet's limb into its umbra, reddened on the way; what lights a moon in totality.
+    private static readonly float3 UmbraGlow = new(1.2e-3f, 3e-4f, 6e-5f);
+
+    private readonly float4[] _occluders = new float4[OccluderVectors.MaxOccluders];
+    private readonly float4[] _occluderGlow = new float4[OccluderVectors.MaxOccluders];
+
     public float Ev100 { get; set; } = 15.0f;
 
     public Tonemapper Tonemapper { get; set; } = Tonemapper.Aces;
@@ -44,6 +58,15 @@ public sealed class SceneLighting {
 
     // Degrees of azimuth from north and elevation above the camera's local horizon; for inspecting lighting.
     public float2? SunAzimuthElevation { get; set; }
+
+    // Debug aid: lines the sun up behind a moon so its shadow falls on the planet below the camera (solar), or behind the planet so the moon is shaded (lunar).
+    public EclipseTest Eclipse { get; set; }
+
+    // xyz centre relative to the camera, w radius, for the bodies nearest the camera.
+    public ReadOnlySpan<float4> Occluders => _occluders;
+
+    // Sunlight each occluder leaks into its umbra: reddened through an atmosphere, none without.
+    public ReadOnlySpan<float4> OccluderGlow => _occluderGlow;
 
     public float3 SunDirection { get; private set; } = float3.UnitY;
 
@@ -72,6 +95,19 @@ public sealed class SceneLighting {
 
         var body = system.DominantBodyAt(camera, universalTime);
         var offset = camera - system.StateAt(body.Index, universalTime).Position;
+
+        UpdateOccluders(system, universalTime, camera);
+
+        if (Eclipse != EclipseTest.None && FindMoon(system) is { Parent: { } planet } moon) {
+
+            var moonPosition = system.StateAt(moon.Index, universalTime).Position;
+            var planetPosition = system.StateAt(planet.Index, universalTime).Position;
+
+            var below = planetPosition + double3.Normalize(camera - planetPosition) * planet.Radius;
+
+            direction = double3.Normalize(Eclipse == EclipseTest.Solar ? moonPosition - below : planetPosition - moonPosition);
+
+        }
         var distance = Math.Max(offset.Length(), body.Radius);
         var up = offset / Math.Max(offset.Length(), 1e-9);
 
@@ -114,6 +150,60 @@ public sealed class SceneLighting {
 
         SkyIrradiance = SpaceMath.ToFloat((sky + floor) * AmbientScale);
         GroundIrradiance = SpaceMath.ToFloat((ground + floor * 0.5) * AmbientScale);
+
+    }
+
+    // The two bodies nearest the camera, which are the ones whose shadows can reach anything in view.
+    private void UpdateOccluders(CelestialSystem system, double universalTime, double3 camera) {
+
+        Array.Clear(_occluders);
+        Array.Clear(_occluderGlow);
+
+        Span<double> distances = stackalloc double[OccluderVectors.MaxOccluders];
+
+        distances.Fill(double.MaxValue);
+
+        foreach (var body in system.Bodies) {
+
+            var offset = system.StateAt(body.Index, universalTime).Position - camera;
+            var distance = offset.Length();
+            var slot = distance < distances[0] ? 0 : distance < distances[1] ? 1 : -1;
+
+            if (slot < 0) {
+
+                continue;
+
+            }
+
+            if (slot == 0) {
+
+                distances[1] = distances[0];
+                _occluders[1] = _occluders[0];
+                _occluderGlow[1] = _occluderGlow[0];
+
+            }
+
+            distances[slot] = distance;
+            _occluders[slot] = new float4(SpaceMath.ToFloat(offset), (float)body.Radius);
+            _occluderGlow[slot] = body.Atmosphere?.Scattering is not null ? new float4(UmbraGlow, 0) : float4.Zero;
+
+        }
+
+    }
+
+    private static CelestialBody? FindMoon(CelestialSystem system) {
+
+        foreach (var body in system.Bodies) {
+
+            if (body.Parent is not null) {
+
+                return body;
+
+            }
+
+        }
+
+        return null;
 
     }
 

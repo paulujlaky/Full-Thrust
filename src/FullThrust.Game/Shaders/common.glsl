@@ -57,6 +57,10 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 lightIntensities[4];
     vec4 lightCount;
 
+    // Bodies that can pass in front of the sun: xyz centre relative to the camera, w radius; rgb of the sunlight each leaks into its umbra.
+    vec4 occluders[2];
+    vec4 occluderGlow[2];
+
 } frame;
 
 layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
@@ -213,6 +217,9 @@ vec3 ShadeSurface(Surface s, vec3 p, vec3 n, vec3 v, float shadow) {
     vec3 irradiance = AmbientIrradiance(p, n);
     vec3 reflected = EnvironmentRadiance(p, reflect(-v, n));
     vec3 ambient = (1.0 - ambientF) * (1.0 - s.metallic) * s.albedo * irradiance / PI + ambientF * mix(reflected, irradiance / PI, roughness);
+
+    // In a shadow the sky above is dark too; some light still scatters in from beyond its edge.
+    ambient *= mix(vec3(1.0), EclipseLight(p), 0.9);
 
     for (int i = 0; i < int(frame.lightCount.x); i++) {
 

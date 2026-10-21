@@ -14,6 +14,15 @@ public struct CascadeMatrices {
 
 }
 
+[InlineArray(MaxOccluders)]
+public struct OccluderVectors {
+
+    public const int MaxOccluders = 2;
+
+    private float4 _element;
+
+}
+
 [InlineArray(MaxPointLights)]
 public struct LightVectors {
 
@@ -71,6 +80,10 @@ public struct FrameUniforms {
     public LightVectors LightPositions;
     public LightVectors LightIntensities;
     public float4 LightCount;
+
+    // Bodies that can pass in front of the sun: xyz centre relative to the camera, w radius; rgb of the sunlight each leaks into its umbra.
+    public OccluderVectors Occluders;
+    public OccluderVectors OccluderGlow;
 
 }
 

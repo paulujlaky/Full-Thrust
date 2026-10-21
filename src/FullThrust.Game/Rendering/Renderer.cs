@@ -349,6 +349,13 @@ public sealed class Renderer : IDisposable {
 
         };
 
+        for (var i = 0; i < OccluderVectors.MaxOccluders; i++) {
+
+            uniforms.Occluders[i] = lighting.Occluders[i];
+            uniforms.OccluderGlow[i] = lighting.OccluderGlow[i];
+
+        }
+
         Shadows.Update(view, projection, lighting.SunDirection);
 
         for (var i = 0; i < _passes.Count; i++) {
