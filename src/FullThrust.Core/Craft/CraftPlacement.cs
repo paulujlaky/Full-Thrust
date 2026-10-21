@@ -7,6 +7,15 @@ using FullThrust.Core.Space;
 
 namespace FullThrust.Core.Craft;
 
+// Where a craft placed in orbit points its nose.
+public enum Attitude {
+
+    Prograde,
+    Retrograde,
+    Radial,
+
+}
+
 public readonly struct CraftPlacement {
 
     public readonly Transform Pose;
@@ -41,11 +50,20 @@ public readonly struct CraftPlacement {
 
     }
 
-    // Nose prograde on a body-relative orbit.
-    public static CraftPlacement InOrbit(CelestialSystem system, CelestialBody body, in StateVector relative, double universalTime) {
+    // On a body-relative orbit, nose prograde unless told otherwise.
+    public static CraftPlacement InOrbit(CelestialSystem system, CelestialBody body, in StateVector relative, double universalTime, Attitude attitude = Attitude.Prograde) {
 
         var frame = system.StateAt(body.Index, universalTime);
-        var rotation = OrbitCameraRig.LookRotation(double3.Normalize(relative.Position), double3.Normalize(relative.Velocity));
+        var up = double3.Normalize(relative.Position);
+        var prograde = double3.Normalize(relative.Velocity);
+
+        var rotation = attitude switch {
+
+            Attitude.Retrograde => OrbitCameraRig.LookRotation(up, -prograde),
+            Attitude.Radial => OrbitCameraRig.LookRotation(prograde, up),
+            _ => OrbitCameraRig.LookRotation(up, prograde),
+
+        };
 
         return new CraftPlacement(
             new Transform(frame.Position + relative.Position, rotation),

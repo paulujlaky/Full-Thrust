@@ -45,6 +45,9 @@ public sealed class GameOptions {
 
     public Scenario Scenario = Scenario.Launchpad;
 
+    // Starting attitude for the orbital scenarios; null keeps each scenario's own.
+    public Attitude? Attitude;
+
     public string? Rocket;
 
     public int Focus;
@@ -239,7 +242,7 @@ public sealed class GameApp : IDisposable {
         _debugUi = new DebugUi(_window, _vulkan, _renderer.Swapchain) { Visible = options.Overlay };
         _uploader = new GpuUploader(_vulkan);
 
-        _scene = new DemoScene(_bodies, _rockets, _focus, _models);
+        _scene = new DemoScene(_bodies, _rockets, _focus, _models) { Attitude = options.Attitude };
         _scene.Populate(_world, options.Scenario, rocket, _clock.UniversalTime);
 
         _camera = new CameraController(_input, new Camera(), _scene);

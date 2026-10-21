@@ -73,6 +73,12 @@ if (Value("--scenario") is { } scenario) {
 
 }
 
+if (Value("--attitude") is { } attitude) {
+
+    options.Attitude = Enum.Parse<FullThrust.Core.Craft.Attitude>(attitude, ignoreCase: true);
+
+}
+
 using var game = new GameApp(options);
 
 game.Run();

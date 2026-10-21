@@ -300,7 +300,7 @@ VolumeSample Trail(VolumePrimitive v, vec3 p) {
 
 }
 
-// Bow shock: a glowing paraboloid from params0 (stagnation point, nose radius) opening down axis.xyz for axis.w metres, hot gas filling it.
+// Bow shock: a glowing paraboloid swept along the windward line from params0 (near end, nose radius) to params1 (far end, its relative glow), opening down axis.xyz for axis.w metres.
 VolumeSample Shock(VolumePrimitive v, vec3 p) {
 
     VolumeSample s;
@@ -308,7 +308,14 @@ VolumeSample Shock(VolumePrimitive v, vec3 p) {
     s.extinction = 0.0;
     s.emission = vec3(0.0);
 
-    vec3 offset = p - v.params0.xyz;
+    vec3 span = v.params1.xyz - v.params0.xyz;
+    vec3 across = span - v.axis.xyz * dot(span, v.axis.xyz);
+    float reach = dot(across, across);
+
+    // Measured from the stretch of the line level with this point across the flow, so the sheath is one surface rather than a row of caps.
+    float u = reach > 1e-4 ? clamp(dot(p - v.params0.xyz, across) / reach, 0.0, 1.0) : 0.0;
+
+    vec3 offset = p - v.params0.xyz - span * u;
     float nose = v.params0.w;
     float x = dot(offset, v.axis.xyz);
 
@@ -325,8 +332,12 @@ VolumeSample Shock(VolumePrimitive v, vec3 p) {
     // The shock front glows hardest, and the compressed gas behind it fades downstream; the flow tears it into flickering streaks.
     float sheet = exp(-pow((r - front) / thickness, 2.0));
     float inside = 1.0 - smoothstep(front - thickness, front + thickness, r);
-    float streaks = texture(shapeNoise, vec3(r / (nose * 1.5), x / (nose * 6.0) - frame.exposure.w * 2.0, 0.37)).r;
-    float glow = (sheet + 0.05 * inside) * exp(-max(x, 0.0) / (nose * 2.0)) * (0.5 + streaks);
+    float streaks = texture(shapeNoise, vec3(r / (nose * 1.5), x / (nose * 6.0) - frame.exposure.w * 2.0, 0.37 + u * sqrt(reach) / (nose * 4.0))).r;
+
+    // Hottest in the layer pressed against the nose where the shock stands normal; as it turns oblique down the flanks it barely glows.
+    float fade = 1.0 - smoothstep(v.axis.w * 0.5, v.axis.w, x);
+    float layer = 0.6 * inside * exp(-max(x, 0.0) / (nose * 0.3));
+    float glow = (sheet * exp(-max(x, 0.0) / (nose * 0.35)) + layer) * fade * (0.5 + streaks) * mix(1.0, v.params1.w, u);
 
     s.emission = v.emission.rgb * glow;
     s.extinction = v.medium.w * glow;

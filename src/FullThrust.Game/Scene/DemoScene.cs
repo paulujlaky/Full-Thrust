@@ -52,6 +52,9 @@ public sealed class DemoScene {
 
     public ModelCatalog Models { get; }
 
+    // Overrides the scenario's starting attitude in orbit; reentry otherwise starts tail first, so a capsule leads with its shield.
+    public Attitude? Attitude { get; set; }
+
     public Entity LaunchPad { get; private set; }
 
     public RocketCatalog Rockets { get; }
@@ -147,7 +150,8 @@ public sealed class DemoScene {
 
             Scenario.Launchpad => LaunchPlacement(planet, rocket, universalTime),
             Scenario.LunarTransfer => CraftPlacement.InOrbit(System, planet, OrbitScenarios.LunarTransfer(System, Moon, parking, universalTime), universalTime),
-            Scenario.Reentry => CraftPlacement.InOrbit(System, planet, OrbitScenarios.Entry(planet.GravitationalParameter, planet.Radius + EntryAltitude, EntrySpeed, EntryAngleDeg * Math.PI / 180), universalTime),
+            Scenario.LowOrbit => CraftPlacement.InOrbit(System, planet, OrbitScenarios.Circular(planet.GravitationalParameter, parking), universalTime, Attitude ?? Core.Craft.Attitude.Prograde),
+            Scenario.Reentry => CraftPlacement.InOrbit(System, planet, OrbitScenarios.Entry(planet.GravitationalParameter, planet.Radius + EntryAltitude, EntrySpeed, EntryAngleDeg * Math.PI / 180), universalTime, Attitude ?? Core.Craft.Attitude.Retrograde),
             _ => CraftPlacement.InOrbit(System, planet, OrbitScenarios.Circular(planet.GravitationalParameter, parking), universalTime),
 
         };

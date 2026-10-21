@@ -49,6 +49,15 @@
         { "part": "tank-colossus-1" },
         { "part": "engine-colossus-5", "stage": 0 }
       ]
+    },
+    {
+      "id": "pinnacle-return",
+      "name": "Pinnacle Return",
+      "description": "The Pinnacle capsule alone, as it comes home: try it with the reentry scenario.",
+      "parts": [
+        { "part": "pod-pinnacle" },
+        { "part": "rcs-quad", "parent": 0, "radial": 4, "height": 0.35, "angleDeg": 45 }
+      ]
     }
   ]
 }
