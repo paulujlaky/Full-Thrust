@@ -39,6 +39,6 @@ void main() {
     s.emissive = vec3(0.0);
     s.reflectance = 0.04;
 
-    outColor = vec4(Expose(ShadeSurface(s, n, v, 1.0)), 1.0);
+    outColor = vec4(Expose(ShadeSurface(s, vWorldPosition, n, v, 1.0)), 1.0);
 
 }

@@ -1,0 +1,114 @@
+#version 450
+
+#include "common.glsl"
+
+// One workgroup per texel; each invocation integrates one of 64 directions over the sphere.
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 64) in;
+
+layout(set = 1, binding = 0, rgba16f) uniform writeonly image2D target;
+
+const int Samples = 20;
+const float IsotropicPhase = 1.0 / (4.0 * PI);
+
+shared vec3 sharedLuminance[64];
+shared vec3 sharedTransfer[64];
+
+void main() {
+
+    ivec2 pixel = ivec2(gl_WorkGroupID.xy);
+    uint index = gl_LocalInvocationID.z;
+
+    vec2 uv = vec2(SubUvToUnit((pixel.x + 0.5) / MultiScatterLutSize.x, MultiScatterLutSize.x), SubUvToUnit((pixel.y + 0.5) / MultiScatterLutSize.y, MultiScatterLutSize.y));
+    uv = clamp(uv, 0.0, 1.0);
+
+    float sunCos = uv.x * 2.0 - 1.0;
+    float viewHeight = BottomRadius() + clamp(uv.y + 0.0001, 0.0, 1.0) * (TopRadius() - BottomRadius() - 2.0);
+
+    vec3 origin = vec3(0.0, 0.0, viewHeight);
+    vec3 sunDirection = vec3(0.0, sqrt(max(1.0 - sunCos * sunCos, 0.0)), sunCos);
+
+    float a = (float(index % 8u) + 0.5) / 8.0;
+    float b = (float(index / 8u) + 0.5) / 8.0;
+    float theta = 2.0 * PI * a;
+    float phi = acos(1.0 - 2.0 * b);
+    vec3 direction = vec3(cos(theta) * sin(phi), sin(theta) * sin(phi), cos(phi));
+
+    float topNear;
+    float topFar;
+    float groundNear;
+    float groundFar;
+
+    RaySphere(origin, direction, TopRadius(), topNear, topFar);
+
+    float end = topFar;
+    bool ground = RaySphere(origin, direction, BottomRadius(), groundNear, groundFar) && groundNear > 0.0;
+
+    if (ground) {
+
+        end = groundNear;
+
+    }
+
+    float dt = max(end, 0.0) / float(Samples);
+    vec3 luminance = vec3(0.0);
+    vec3 transfer = vec3(0.0);
+    vec3 throughput = vec3(1.0);
+
+    for (int i = 0; i < Samples; i++) {
+
+        vec3 p = origin + direction * ((float(i) + 0.3) * dt);
+        float r = length(p);
+        float pointSunCos = dot(sunDirection, p / r);
+
+        Medium m = SampleMedium(r - BottomRadius());
+        vec3 stepTransmittance = exp(-m.extinction * dt);
+        vec3 extinction = max(m.extinction, vec3(1e-12));
+
+        vec3 source = Transmittance(r, pointSunCos) * SunVisibility(r, pointSunCos) * m.scattering * IsotropicPhase;
+
+        luminance += throughput * (source - source * stepTransmittance) / extinction;
+        transfer += throughput * (m.scattering - m.scattering * stepTransmittance) / extinction;
+        throughput *= stepTransmittance;
+
+    }
+
+    // Sunlight bounced off the ground at the end of the ray.
+    if (ground) {
+
+        vec3 p = origin + direction * end;
+        float r = length(p);
+        float groundSunCos = dot(sunDirection, p / r);
+
+        luminance += throughput * Transmittance(r, groundSunCos) * max(groundSunCos, 0.0) * frame.groundAlbedo.rgb / PI;
+
+    }
+
+    sharedLuminance[index] = luminance * (4.0 * PI / 64.0);
+    sharedTransfer[index] = transfer * (4.0 * PI / 64.0);
+
+    barrier();
+
+    for (uint stride = 32u; stride > 0u; stride >>= 1u) {
+
+        if (index < stride) {
+
+            sharedLuminance[index] += sharedLuminance[index + stride];
+            sharedTransfer[index] += sharedTransfer[index + stride];
+
+        }
+
+        barrier();
+
+    }
+
+    if (index == 0u) {
+
+        vec3 secondOrder = sharedLuminance[0] * IsotropicPhase;
+        vec3 transferRatio = sharedTransfer[0] * IsotropicPhase;
+
+        // Infinite series of further bounces, each scaled by the transfer ratio.
+        imageStore(target, pixel, vec4(secondOrder / (1.0 - transferRatio), 1.0));
+
+    }
+
+}

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Brutal.GlfwApi;
 using Brutal.Logging;
 using Brutal.Numerics;
@@ -59,6 +60,9 @@ public sealed class GameOptions {
     // NaN keeps the default daylight exposure.
     public double Ev100 = double.NaN;
 
+    // "azimuth,elevation" in degrees relative to the local horizon.
+    public string? Sun;
+
     // Replaces the shaded scene with a debug view for captures: "ao" or "cascades".
     public string? DebugView;
 
@@ -112,6 +116,7 @@ public sealed class GameApp : IDisposable {
     private MeshPass? _meshPass;
     private AmbientOcclusion? _occlusion;
     private BackgroundPass? _background;
+    private AtmosphereRenderer? _atmosphere;
 
     private readonly World _world = new();
     private readonly SystemScheduler _systems = new();
@@ -182,6 +187,12 @@ public sealed class GameApp : IDisposable {
         _vulkan = new VulkanContext(_window, options.Validation);
         _lighting.Headlight = options.Headlight;
 
+        if (options.Sun?.Split(',') is [var azimuth, var elevation]) {
+
+            _lighting.SunAzimuthElevation = new float2(float.Parse(azimuth, CultureInfo.InvariantCulture), float.Parse(elevation, CultureInfo.InvariantCulture));
+
+        }
+
         if (!double.IsNaN(options.Ev100)) {
 
             _lighting.Ev100 = (float)options.Ev100;
@@ -224,7 +235,7 @@ public sealed class GameApp : IDisposable {
         _debugUi.AddPanel(new TimeWarpPanel(_warp, _clock));
         _debugUi.AddPanel(new ScenarioPanel(ResetScenario, _scene, _orbitDraw, _craftDraw, _camera, CaptureNow));
         _debugUi.AddPanel(new CraftPanel(_world, _focus, _bodies, _parts, _physicsFrame, _physics, _flight));
-        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting, _renderer.Shadows, _occlusion!, _background!));
+        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting, _renderer.Shadows, _occlusion!, _background!, _atmosphere!));
         _debugUi.AddPanel(new ControlsPanel());
 
         _origin.ShiftTo(_world.Get<Transform>(_scene.Craft).Position);
@@ -291,6 +302,9 @@ public sealed class GameApp : IDisposable {
         _renderer.AddPass(_meshPass);
         _background = new BackgroundPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.Frames.SetLayout, shaders);
         _renderer.AddPass(_background);
+        _atmosphere = new AtmosphereRenderer(_vulkan.Device, shaders, _renderer.Frames, _bodies, _origin);
+        _renderer.AddPass(_atmosphere);
+
         _occlusion = new AmbientOcclusion(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames) { ShowOcclusion = _options.DebugView == "ao" };
         _renderer.Shadows.ShowCascades = _options.DebugView == "cascades";
         _renderer.AddPass(_occlusion);
@@ -591,6 +605,7 @@ public sealed class GameApp : IDisposable {
         _lighting.Update(_bodies, _clock.UniversalTime, _camera.Camera.Position, _camera.Camera.Forward, _camera.Camera.Up);
         _renderer.Seconds = _clock.UniversalTime;
         _terrain?.Prepare(_camera.Camera.Position, _clock.UniversalTime);
+        _atmosphere?.Update(_camera.Camera.Position, _clock.UniversalTime);
         _renderer.Render(size, _camera.Camera.ViewMatrix(_origin), _camera.Camera.ProjectionMatrix(aspect));
         _debugUi.EndFrame();
 

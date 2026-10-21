@@ -70,6 +70,39 @@ public sealed class AtmosphereData {
 
     public List<AtmosphereLayerData> Layers { get; set; } = [];
 
+    // Optical properties for rendering; null draws no sky.
+    public ScatteringData? Scattering { get; set; }
+
+}
+
+// Coefficients per metre at sea level, after Hillaire 2020 for Earth.
+public sealed class ScatteringData {
+
+    // Rendered shell above the surface; thinner than the physical atmosphere, where density is negligible.
+    public double Height { get; set; } = 100_000;
+
+    public double[] Rayleigh { get; set; } = [5.802e-6, 13.558e-6, 33.1e-6];
+
+    public double RayleighScaleHeight { get; set; } = 8000;
+
+    public double MieScattering { get; set; } = 3.996e-6;
+
+    public double MieAbsorption { get; set; } = 4.4e-6;
+
+    public double MieScaleHeight { get; set; } = 1200;
+
+    // Henyey-Greenstein asymmetry of the aerosols.
+    public double MieAnisotropy { get; set; } = 0.8;
+
+    public double[] Ozone { get; set; } = [0.65e-6, 1.881e-6, 0.085e-6];
+
+    // Ozone density falls linearly to zero this far either side of its peak.
+    public double OzoneCenter { get; set; } = 25_000;
+
+    public double OzoneHalfWidth { get; set; } = 15_000;
+
+    public double[] GroundAlbedo { get; set; } = [0.3, 0.3, 0.3];
+
 }
 
 public sealed class AtmosphereLayerData {

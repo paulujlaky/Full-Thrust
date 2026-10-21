@@ -247,11 +247,38 @@ vec3 SunDisc(vec3 direction) {
 
 void main() {
 
-    vec4 near = frame.inverseViewProjection * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
-    vec3 direction = normalize(near.xyz / near.w - frame.cameraPosition.xyz);
+    vec3 direction = ViewDirection(vUv * 2.0 - 1.0);
     vec3 equatorial = ToEquatorial(direction);
 
-    vec3 radiance = Stars(equatorial) + MilkyWay(equatorial) + SunDisc(direction);
+    vec3 sky = vec3(0.0);
+    vec3 transmittance = vec3(1.0);
+
+    if (AtmosphereEnabled()) {
+
+        vec3 origin = PlanetRelative(frame.cameraPosition.xyz);
+        float r = length(origin);
+        bool ground = HitsGround(origin, direction);
+
+        // Inside the atmosphere the sky-view table is accurate enough; from space each pixel is marched.
+        if (r < TopRadius()) {
+
+            sky = SkyViewLuminance(origin, direction, frame.sunDirection.xyz);
+            transmittance = ground ? vec3(0.0) : Transmittance(r, dot(direction, origin / r));
+
+        } else {
+
+            ScatteringResult result = IntegrateScattering(origin, direction, frame.sunDirection.xyz, 32, 1e12);
+
+            sky = result.luminance;
+            transmittance = ground ? vec3(0.0) : result.transmittance;
+
+        }
+
+        sky *= frame.sunIlluminance.rgb;
+
+    }
+
+    vec3 radiance = sky + (Stars(equatorial) + MilkyWay(equatorial) + SunDisc(direction)) * transmittance;
 
     outColor = vec4(Expose(radiance), 1.0);
 

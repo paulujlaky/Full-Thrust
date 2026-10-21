@@ -326,9 +326,9 @@ public sealed class Renderer : IDisposable {
             SunDirection = new float4(lighting.SunDirection, lighting.SunCosAngularRadius),
             SunIlluminance = new float4(lighting.SunIlluminance, 0),
 
-            AmbientUp = new float4(lighting.AmbientUp, 0),
+            AmbientUp = new float4(lighting.AmbientUp, lighting.MinimumAmbientLux * lighting.AmbientScale),
             SkyIrradiance = new float4(lighting.SkyIrradiance, 0),
-            GroundIrradiance = new float4(lighting.GroundIrradiance, 0),
+            GroundIrradiance = new float4(lighting.GroundIrradiance, lighting.AmbientScale),
 
             Exposure = new float4(lighting.Exposure, lighting.Ev100, (float)lighting.Tonemapper, (float)(Seconds % 3600.0)),
 

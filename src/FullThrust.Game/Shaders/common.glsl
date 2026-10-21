@@ -28,12 +28,40 @@ layout(set = 0, binding = 0) uniform Frame {
     // x: 1 when the ambient occlusion image holds this frame's result.
     vec4 aoParams;
 
+    // Atmosphere of the nearest body with one. Centre xyz and bottom radius w.
+    vec4 atmosphereCenter;
+
+    // x top radius, y Mie anisotropy, z 1 when enabled, w ozone half width.
+    vec4 atmosphereShape;
+
+    // Coefficients per metre at the surface; w holds the scale height, or the ozone peak altitude.
+    vec4 rayleighScattering;
+    vec4 mieScattering;
+    vec4 mieExtinction;
+    vec4 ozoneAbsorption;
+    vec4 groundAlbedo;
+
 } frame;
 
 layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
 layout(set = 0, binding = 2) uniform sampler2D ambientOcclusion;
+layout(set = 0, binding = 3) uniform sampler2D transmittanceLut;
+layout(set = 0, binding = 4) uniform sampler2D multiScatterLut;
+layout(set = 0, binding = 5) uniform sampler2D skyViewLut;
+layout(set = 0, binding = 6) uniform sampler2D irradianceLut;
 
 const float PI = 3.14159265359;
+
+#include "atmosphere.glsl"
+
+// World-space view ray through an NDC position, built in view space so it stays exact far from the floating origin.
+vec3 ViewDirection(vec2 ndc) {
+
+    vec3 view = vec3(ndc.x / frame.projection[0][0], ndc.y / frame.projection[1][1], -1.0);
+
+    return normalize(transpose(mat3(frame.view)) * view);
+
+}
 
 // Scene shaders write pre-exposed radiance so fp16 targets never see raw lux values.
 vec3 Expose(vec3 radiance) {
@@ -42,11 +70,23 @@ vec3 Expose(vec3 radiance) {
 
 }
 
-vec3 AmbientIrradiance(vec3 n) {
+// Near a body with an atmosphere its sky and ground light; elsewhere the camera's hemisphere of planetshine.
+vec3 AmbientIrradiance(vec3 p, vec3 n) {
 
     float t = dot(n, frame.ambientUp.xyz) * 0.5 + 0.5;
+    vec3 hemisphere = mix(frame.groundIrradiance.rgb, frame.skyIrradiance.rgb, t);
+    float weight = AtmosphereWeight(p);
 
-    return mix(frame.groundIrradiance.rgb, frame.skyIrradiance.rgb, t);
+    if (weight <= 0.0) {
+
+        return hemisphere;
+
+    }
+
+    // ambientUp.w is the night-time floor and groundIrradiance.w the overlay's ambient scale.
+    vec3 atmosphere = AtmosphereIrradiance(p, n) * frame.groundIrradiance.w + frame.ambientUp.w;
+
+    return mix(hemisphere, atmosphere, weight);
 
 }
 
@@ -96,7 +136,7 @@ struct Surface {
 };
 
 // Cook-Torrance GGX under the sun plus a hemisphere ambient; returns radiance before exposure.
-vec3 ShadeSurface(Surface s, vec3 n, vec3 v, float shadow) {
+vec3 ShadeSurface(Surface s, vec3 p, vec3 n, vec3 v, float shadow) {
 
     vec3 l = frame.sunDirection.xyz;
     vec3 h = normalize(l + v);
@@ -113,12 +153,12 @@ vec3 ShadeSurface(Surface s, vec3 n, vec3 v, float shadow) {
     vec3 specular = DistributionGgx(nh, roughness) * VisibilitySmithGgx(nv, nl, roughness) * f;
     vec3 diffuse = (1.0 - f) * (1.0 - s.metallic) * s.albedo / PI;
 
-    vec3 direct = (diffuse + specular) * frame.sunIlluminance.rgb * nl * shadow;
+    vec3 direct = (diffuse + specular) * SunIlluminanceAt(p) * nl * shadow;
 
     // Without an environment map, metals pick up the ambient through a roughness-weighted Fresnel term.
     vec3 ambientF = FresnelSchlickRoughness(nv, f0, roughness);
-    vec3 irradiance = AmbientIrradiance(n);
-    vec3 reflected = AmbientIrradiance(reflect(-v, n));
+    vec3 irradiance = AmbientIrradiance(p, n);
+    vec3 reflected = AmbientIrradiance(p, reflect(-v, n));
     vec3 ambient = ((1.0 - ambientF) * (1.0 - s.metallic) * s.albedo * irradiance + ambientF * mix(reflected, irradiance, roughness)) / PI;
 
     return direct + ambient * s.occlusion + s.emissive;

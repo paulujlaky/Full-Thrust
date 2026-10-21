@@ -50,6 +50,8 @@ public struct FrameUniforms {
     // x: 1 when the ambient occlusion image holds this frame's result.
     public float4 AmbientOcclusion;
 
+    public AtmosphereUniforms Atmosphere;
+
 }
 
 // Descriptor set 0, shared by every scene pipeline: frame uniforms plus the textures any shader may sample.
@@ -58,9 +60,13 @@ public static class GlobalBindings {
     public const int Frame = 0;
     public const int ShadowMap = 1;
     public const int AmbientOcclusion = 2;
+    public const int TransmittanceLut = 3;
+    public const int MultiScatterLut = 4;
+    public const int SkyViewLut = 5;
+    public const int IrradianceLut = 6;
 
     // Every binding after Frame is a combined image sampler; add new ones here and in common.glsl.
-    public const int Count = 3;
+    public const int Count = 7;
 
 }
 

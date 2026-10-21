@@ -40,6 +40,9 @@ public sealed class SceneLighting {
 
     public float3 SunOverride { get; set; } = float3.Normalize(new float3(0.6f, 0.7f, 0.35f));
 
+    // Degrees of azimuth from north and elevation above the camera's local horizon; for inspecting lighting.
+    public float2? SunAzimuthElevation { get; set; }
+
     public float3 SunDirection { get; private set; } = float3.UnitY;
 
     public float3 SunIlluminance { get; private set; }
@@ -65,14 +68,26 @@ public sealed class SceneLighting {
 
         }
 
-        SunDirection = SpaceMath.ToFloat(double3.Normalize(direction));
-        SunIlluminance = sun.Color * (float)sun.Illuminance;
-        SunCosAngularRadius = (float)Math.Cos(sun.AngularRadius);
-
         var body = system.DominantBodyAt(camera, universalTime);
         var offset = camera - system.StateAt(body.Index, universalTime).Position;
         var distance = Math.Max(offset.Length(), body.Radius);
         var up = offset / Math.Max(offset.Length(), 1e-9);
+
+        if (SunAzimuthElevation is { } azel) {
+
+            var east = double3.Normalize(double3.Cross(double3.UnitY, up));
+            var north = double3.Cross(up, east);
+            var azimuth = azel.X * Math.PI / 180;
+            var elevation = azel.Y * Math.PI / 180;
+
+            direction = (east * Math.Sin(azimuth) + north * Math.Cos(azimuth)) * Math.Cos(elevation) + up * Math.Sin(elevation);
+
+        }
+
+        SunDirection = SpaceMath.ToFloat(double3.Normalize(direction));
+        SunIlluminance = sun.Color * (float)sun.Illuminance;
+        SunCosAngularRadius = (float)Math.Cos(sun.AngularRadius);
+
         var sunHeight = double3.Dot(up, direction);
 
         AmbientUp = SpaceMath.ToFloat(up);

@@ -15,8 +15,9 @@ public sealed class RenderingPanel : IDebugPanel {
     private readonly ShadowMaps _shadows;
     private readonly AmbientOcclusion _occlusion;
     private readonly BackgroundPass _background;
+    private readonly AtmosphereRenderer _atmosphere;
 
-    public RenderingPanel(TerrainRenderer terrain, MeshPass meshes, ModelLibrary models, SceneLighting lighting, ShadowMaps shadows, AmbientOcclusion occlusion, BackgroundPass background) {
+    public RenderingPanel(TerrainRenderer terrain, MeshPass meshes, ModelLibrary models, SceneLighting lighting, ShadowMaps shadows, AmbientOcclusion occlusion, BackgroundPass background, AtmosphereRenderer atmosphere) {
 
         _terrain = terrain;
         _meshes = meshes;
@@ -25,6 +26,7 @@ public sealed class RenderingPanel : IDebugPanel {
         _shadows = shadows;
         _occlusion = occlusion;
         _background = background;
+        _atmosphere = atmosphere;
 
     }
 
@@ -35,6 +37,17 @@ public sealed class RenderingPanel : IDebugPanel {
     private void DrawBackground() {
 
         ImGui.SeparatorText("Sky"u8);
+
+        var atmosphere = _atmosphere.Active;
+
+        if (ImGui.Checkbox("Atmosphere"u8, ref atmosphere)) {
+
+            _atmosphere.Active = atmosphere;
+
+        }
+
+        ImGui.SameLine();
+        ImGui.Text($"{_atmosphere.Body?.Name ?? "none"}");
 
         var stars = _background.StarBrightness;
 

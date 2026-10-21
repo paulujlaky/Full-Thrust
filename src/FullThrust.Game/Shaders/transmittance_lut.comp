@@ -1,0 +1,47 @@
+#version 450
+
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 1, binding = 0, rgba16f) uniform writeonly image2D target;
+
+const int Samples = 40;
+
+void main() {
+
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+
+    if (any(greaterThanEqual(pixel, ivec2(TransmittanceLutSize)))) {
+
+        return;
+
+    }
+
+    float viewHeight;
+    float viewZenithCos;
+
+    TransmittanceParams((vec2(pixel) + 0.5) / TransmittanceLutSize, viewHeight, viewZenithCos);
+
+    vec3 origin = vec3(0.0, 0.0, viewHeight);
+    vec3 direction = vec3(0.0, sqrt(max(1.0 - viewZenithCos * viewZenithCos, 0.0)), viewZenithCos);
+
+    float near;
+    float far;
+
+    RaySphere(origin, direction, TopRadius(), near, far);
+
+    float dt = max(far, 0.0) / float(Samples);
+    vec3 depth = vec3(0.0);
+
+    for (int i = 0; i < Samples; i++) {
+
+        vec3 p = origin + direction * ((float(i) + 0.5) * dt);
+
+        depth += SampleMedium(length(p) - BottomRadius()).extinction * dt;
+
+    }
+
+    imageStore(target, pixel, vec4(exp(-depth), 1.0));
+
+}
