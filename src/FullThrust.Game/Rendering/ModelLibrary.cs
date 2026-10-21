@@ -245,7 +245,7 @@ public sealed class ModelLibrary : IDisposable {
     }
 
     // Records every instance of a catalog model; entity is the render-local placement of its owner.
-    public void Draw(CommandBuffer cmd, VkPipelineLayout layout, VkPipeline single, VkPipeline both, int definition, in float4x4 entity, in float4x4 entityRotation) {
+    public void Draw(CommandBuffer cmd, VkPipelineLayout layout, VkPipeline single, VkPipeline both, int definition, in float4x4 entity, in float4x4 entityRotation, bool depthOnly = false, int cascade = -1) {
 
         ref readonly var placement = ref _placements[definition];
 
@@ -269,6 +269,8 @@ public sealed class ModelLibrary : IDisposable {
                 Normal1 = new float4(normal.Y.X, normal.Y.Y, normal.Y.Z, 0),
                 Normal2 = new float4(normal.Z.X, normal.Z.Y, normal.Z.Z, 0),
 
+                View = new int4(cascade, 0, 0, 0),
+
             };
 
             cmd.PushConstants(layout, VkShaderStageFlags.VertexBit, ByteSize.Zero, push);
@@ -278,6 +280,14 @@ public sealed class ModelLibrary : IDisposable {
             for (var p = mesh.FirstPrimitive; p < mesh.FirstPrimitive + mesh.PrimitiveCount; p++) {
 
                 var primitive = source.Primitives[p];
+
+                // Depth-only pipelines have no fragment shader to discard cut-out texels.
+                if (depthOnly && source.Materials[primitive.Material].AlphaMode == AlphaMode.Mask) {
+
+                    continue;
+
+                }
+
                 var twoSided = model.DoubleSided[primitive.Material] ? 1 : 0;
 
                 if (twoSided != boundBoth) {
@@ -467,5 +477,8 @@ public struct MeshPush {
     public float4 Normal0;
     public float4 Normal1;
     public float4 Normal2;
+
+    // x: shadow cascade the depth-only shaders project into.
+    public int4 View;
 
 }

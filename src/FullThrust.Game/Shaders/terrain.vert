@@ -15,6 +15,9 @@ layout(location = 3) out vec3 vDetail;
 layout(location = 4) out float vHeight;
 layout(location = 5) out vec3 vUp;
 
+// The depth prepass runs this shader too, and the opaque pass must reproduce its depth exactly.
+invariant gl_Position;
+
 void main() {
 
     vec4 world = pc.model * vec4(inPosition, 1.0);

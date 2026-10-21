@@ -4,6 +4,7 @@ using Brutal.VulkanApi.Abstractions;
 namespace FullThrust.Game.Rendering;
 
 // Linear HDR colour and depth the scene passes draw into; the tonemap pass resolves it to the swapchain.
+// Between render passes depth rests in DepthStencilReadOnlyOptimal and colour in ShaderReadOnlyOptimal, so both can be sampled.
 public sealed class HdrTarget : IDisposable {
 
     public const VkFormat ColorFormat = VkFormat.R16G16B16A16SFloat;
@@ -21,18 +22,78 @@ public sealed class HdrTarget : IDisposable {
 
         _device = device;
 
-        RenderPass = CreateRenderPass();
+        DepthPass = RenderPasses.Create(device, null, new AttachmentDesc {
+
+            Format = DepthFormat,
+            Load = VkAttachmentLoadOp.Clear,
+            Store = VkAttachmentStoreOp.Store,
+            Initial = VkImageLayout.Undefined,
+            Subpass = VkImageLayout.DepthStencilAttachmentOptimal,
+            Final = VkImageLayout.DepthStencilReadOnlyOptimal,
+
+        });
+
+        OpaquePass = RenderPasses.Create(device, new AttachmentDesc {
+
+            Format = ColorFormat,
+            Load = VkAttachmentLoadOp.Clear,
+            Store = VkAttachmentStoreOp.Store,
+            Initial = VkImageLayout.Undefined,
+            Subpass = VkImageLayout.ColorAttachmentOptimal,
+            Final = VkImageLayout.ShaderReadOnlyOptimal,
+
+        }, new AttachmentDesc {
+
+            Format = DepthFormat,
+            Load = VkAttachmentLoadOp.Load,
+            Store = VkAttachmentStoreOp.Store,
+            Initial = VkImageLayout.DepthStencilReadOnlyOptimal,
+            Subpass = VkImageLayout.DepthStencilAttachmentOptimal,
+            Final = VkImageLayout.DepthStencilReadOnlyOptimal,
+
+        });
+
+        TransparentPass = RenderPasses.Create(device, new AttachmentDesc {
+
+            Format = ColorFormat,
+            Load = VkAttachmentLoadOp.Load,
+            Store = VkAttachmentStoreOp.Store,
+            Initial = VkImageLayout.ShaderReadOnlyOptimal,
+            Subpass = VkImageLayout.ColorAttachmentOptimal,
+            Final = VkImageLayout.ShaderReadOnlyOptimal,
+
+        }, new AttachmentDesc {
+
+            Format = DepthFormat,
+            Load = VkAttachmentLoadOp.Load,
+            Store = VkAttachmentStoreOp.Store,
+            Initial = VkImageLayout.DepthStencilReadOnlyOptimal,
+            Subpass = VkImageLayout.DepthStencilReadOnlyOptimal,
+            Final = VkImageLayout.DepthStencilReadOnlyOptimal,
+
+        });
+
         Create(extent);
 
     }
 
-    public VkRenderPass RenderPass { get; }
+    // Depth only; pipelines built against it also work in ShadowMaps.RenderPass.
+    public VkRenderPass DepthPass { get; }
+
+    // Colour and depth; pipelines built against it also work in TransparentPass.
+    public VkRenderPass OpaquePass { get; }
+
+    public VkRenderPass TransparentPass { get; }
+
+    public VkFramebuffer DepthFramebuffer { get; private set; }
 
     public VkFramebuffer Framebuffer { get; private set; }
 
     public VkExtent2D Extent { get; private set; }
 
     public VkImageView ColorView => _colorView.VkImageView;
+
+    public VkImageView DepthView => _depthView.VkImageView;
 
     public void Resize(VkExtent2D extent) {
 
@@ -45,8 +106,8 @@ public sealed class HdrTarget : IDisposable {
 
         Extent = extent;
 
-        var color = CreateImage("HdrColor", ColorFormat, VkImageUsageFlags.ColorAttachmentBit | VkImageUsageFlags.SampledBit);
-        var depth = CreateImage("HdrDepth", DepthFormat, VkImageUsageFlags.DepthStencilAttachmentBit);
+        var color = CreateImage("HdrColor", ColorFormat, VkImageUsageFlags.ColorAttachmentBit | VkImageUsageFlags.SampledBit | VkImageUsageFlags.StorageBit | VkImageUsageFlags.TransferSrcBit);
+        var depth = CreateImage("HdrDepth", DepthFormat, VkImageUsageFlags.DepthStencilAttachmentBit | VkImageUsageFlags.SampledBit);
 
         _color = color;
         _colorView = color.CreateImageView(VkImageViewType._2D, color.GetFullRange(VkImageAspectFlags.ColorBit), null);
@@ -61,9 +122,20 @@ public sealed class HdrTarget : IDisposable {
 
         Framebuffer = _device.CreateFramebuffer(new VkFramebufferCreateInfo {
 
-            RenderPass = RenderPass,
+            RenderPass = OpaquePass,
             AttachmentCount = 2,
             Attachments = attachments,
+            Width = extent.Width,
+            Height = extent.Height,
+            Layers = 1,
+
+        }, null);
+
+        DepthFramebuffer = _device.CreateFramebuffer(new VkFramebufferCreateInfo {
+
+            RenderPass = DepthPass,
+            AttachmentCount = 1,
+            Attachments = attachments + 1,
             Width = extent.Width,
             Height = extent.Height,
             Layers = 1,
@@ -91,89 +163,10 @@ public sealed class HdrTarget : IDisposable {
 
     }
 
-    private unsafe VkRenderPass CreateRenderPass() {
-
-        var attachments = stackalloc VkAttachmentDescription[2];
-
-        attachments[0] = new VkAttachmentDescription {
-
-            Format = ColorFormat,
-            Samples = VkSampleCountFlags._1Bit,
-            LoadOp = VkAttachmentLoadOp.Clear,
-            StoreOp = VkAttachmentStoreOp.Store,
-            StencilLoadOp = VkAttachmentLoadOp.DontCare,
-            StencilStoreOp = VkAttachmentStoreOp.DontCare,
-            InitialLayout = VkImageLayout.Undefined,
-            FinalLayout = VkImageLayout.ShaderReadOnlyOptimal,
-
-        };
-
-        attachments[1] = new VkAttachmentDescription {
-
-            Format = DepthFormat,
-            Samples = VkSampleCountFlags._1Bit,
-            LoadOp = VkAttachmentLoadOp.Clear,
-            StoreOp = VkAttachmentStoreOp.DontCare,
-            StencilLoadOp = VkAttachmentLoadOp.DontCare,
-            StencilStoreOp = VkAttachmentStoreOp.DontCare,
-            InitialLayout = VkImageLayout.Undefined,
-            FinalLayout = VkImageLayout.DepthStencilAttachmentOptimal,
-
-        };
-
-        var colorRef = new VkAttachmentReference { Attachment = 0, Layout = VkImageLayout.ColorAttachmentOptimal };
-        var depthRef = new VkAttachmentReference { Attachment = 1, Layout = VkImageLayout.DepthStencilAttachmentOptimal };
-
-        var subpass = new VkSubpassDescription {
-
-            PipelineBindPoint = VkPipelineBindPoint.Graphics,
-            ColorAttachmentCount = 1,
-            ColorAttachments = &colorRef,
-            DepthStencilAttachment = &depthRef,
-
-        };
-
-        var dependencies = stackalloc VkSubpassDependency[2];
-
-        // The previous frame's tonemap must finish sampling before this frame overwrites the image.
-        dependencies[0] = new VkSubpassDependency {
-
-            SrcSubpass = VK.SUBPASS_EXTERNAL,
-            DstSubpass = 0,
-            SrcStageMask = VkPipelineStageFlags.FragmentShaderBit | VkPipelineStageFlags.EarlyFragmentTestsBit | VkPipelineStageFlags.LateFragmentTestsBit,
-            DstStageMask = VkPipelineStageFlags.ColorAttachmentOutputBit | VkPipelineStageFlags.EarlyFragmentTestsBit | VkPipelineStageFlags.LateFragmentTestsBit,
-            SrcAccessMask = VkAccessFlags.DepthStencilAttachmentWriteBit,
-            DstAccessMask = VkAccessFlags.ColorAttachmentWriteBit | VkAccessFlags.DepthStencilAttachmentWriteBit | VkAccessFlags.DepthStencilAttachmentReadBit,
-
-        };
-
-        dependencies[1] = new VkSubpassDependency {
-
-            SrcSubpass = 0,
-            DstSubpass = VK.SUBPASS_EXTERNAL,
-            SrcStageMask = VkPipelineStageFlags.ColorAttachmentOutputBit,
-            DstStageMask = VkPipelineStageFlags.FragmentShaderBit,
-            SrcAccessMask = VkAccessFlags.ColorAttachmentWriteBit,
-            DstAccessMask = VkAccessFlags.ShaderReadBit,
-
-        };
-
-        return _device.CreateRenderPass(new VkRenderPassCreateInfo {
-
-            AttachmentCount = 2,
-            Attachments = attachments,
-            SubpassCount = 1,
-            Subpasses = &subpass,
-            DependencyCount = 2,
-            Dependencies = dependencies,
-
-        }, null);
-
-    }
-
     private void DestroyTargets() {
 
         _device.DestroyFramebuffer(Framebuffer, null);
+        _device.DestroyFramebuffer(DepthFramebuffer, null);
 
         _colorView.Dispose();
         _color?.Dispose();
@@ -189,7 +182,9 @@ public sealed class HdrTarget : IDisposable {
 
         DestroyTargets();
 
-        _device.DestroyRenderPass(RenderPass, null);
+        _device.DestroyRenderPass(DepthPass, null);
+        _device.DestroyRenderPass(OpaquePass, null);
+        _device.DestroyRenderPass(TransparentPass, null);
 
     }
 

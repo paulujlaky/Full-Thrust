@@ -118,6 +118,8 @@ void main() {
 
     }
 
-    outColor = vec4(Expose(ShadeSurface(s, n, v, 1.0)), 1.0);
+    s.albedo *= CascadeTint(vWorldPosition);
+
+    outColor = vec4(Expose(ShadeSurface(s, n, v, SunShadow(vWorldPosition, normalize(vNormal)))), 1.0);
 
 }

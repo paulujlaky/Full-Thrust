@@ -23,13 +23,13 @@ public struct TerrainPush {
     public float4 DeepWater;
     public float4 ShallowWater;
 
-    // Chunk centre in the body-fixed frame.
+    // xyz: chunk centre in the body-fixed frame; w: shadow cascade for the shadow vertex shader.
     public float4 Center;
 
 }
 
 // Quadtree LOD terrain: chunks built on worker threads live in fixed slots of one vertex buffer, recycled LRU first.
-public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
+public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster {
 
     public const double DetailPeriod = 65536;
 
@@ -58,8 +58,8 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
 
     private readonly VkPipelineLayout _layout;
     private readonly VkPipeline _pipeline;
-
-    private readonly float4[] _planes = new float4[5];
+    private readonly VkPipeline _depthPipeline;
+    private readonly VkPipeline _shadowPipeline;
 
     private int _freeCount;
     private int _clock;
@@ -75,7 +75,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
 
     }
 
-    public TerrainRenderer(DeviceEx device, GpuUploader uploader, VkRenderPass renderPass, VkDescriptorSetLayout frameLayout, ShaderLibrary shaders, CelestialSystem system, FloatingOrigin origin) {
+    public TerrainRenderer(DeviceEx device, GpuUploader uploader, VkRenderPass renderPass, VkRenderPass depthPass, VkDescriptorSetLayout frameLayout, ShaderLibrary shaders, CelestialSystem system, FloatingOrigin origin) {
 
         _device = device;
         _system = system;
@@ -139,7 +139,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
 
         unsafe {
 
-            _pipeline = Pipelines.Create(device, shaders, new PipelineDesc {
+            var desc = new PipelineDesc {
 
                 RenderPass = renderPass,
                 Layout = _layout,
@@ -151,7 +151,19 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
                 Cull = VkCullModeFlags.None,
                 Depth = DepthMode.TestWrite,
 
-            });
+            };
+
+            _pipeline = Pipelines.Create(device, shaders, desc);
+
+            desc.RenderPass = depthPass;
+            desc.FragmentShader = null;
+
+            _depthPipeline = Pipelines.Create(device, shaders, desc);
+
+            desc.VertexShader = "terrain_shadow.vert";
+            desc.ShadowCaster = true;
+
+            _shadowPipeline = Pipelines.Create(device, shaders, desc);
 
         }
 
@@ -159,12 +171,14 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
 
     public string Name => "Terrain";
 
-    public RenderStage Stage => RenderStage.Scene;
+    public RenderStage Stage => RenderStage.Opaque;
 
     public bool Enabled { get; set; } = true;
 
     // Tints each chunk by its quadtree level.
     public bool ShowLevels { get; set; }
+
+    public bool CastsDepth => Enabled;
 
     public int DrawCount { get; private set; }
 
@@ -298,14 +312,24 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
 
     public void Record(in FrameContext frame) {
 
-        var cmd = frame.CommandBuffer;
+        DrawCount = DrawChunks(frame.CommandBuffer, _pipeline, frame.FrameSet, Frustum.FromMatrix(frame.View * frame.Projection), -1);
 
-        cmd.BindPipeline(VkPipelineBindPoint.Graphics, _pipeline);
-        cmd.BindDescriptorSet(VkPipelineBindPoint.Graphics, _layout, 0, frame.FrameSet, []);
+    }
+
+    public void RecordDepth(in DepthContext context) {
+
+        var pipeline = context.View == DepthView.Shadow ? _shadowPipeline : _depthPipeline;
+
+        DrawChunks(context.CommandBuffer, pipeline, context.FrameSet, context.Frustum, context.Cascade);
+
+    }
+
+    private int DrawChunks(CommandBuffer cmd, VkPipeline pipeline, VkDescriptorSet frameSet, in Frustum frustum, int cascade) {
+
+        cmd.BindPipeline(VkPipelineBindPoint.Graphics, pipeline);
+        cmd.BindDescriptorSet(VkPipelineBindPoint.Graphics, _layout, 0, frameSet, []);
         cmd.BindVertexBuffer(0, _vertices.VkBuffer);
         cmd.BindIndexBuffer(_indices.VkBuffer, ByteSize.Zero, VkIndexType.UInt16);
-
-        ExtractPlanes(frame.View * frame.Projection);
 
         var draws = 0;
 
@@ -330,7 +354,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
                 var center = position + rotation * chunk.Bounds.Center;
                 var local = SpaceMath.ToFloat(center);
 
-                if (!Visible(local, (float)chunk.Bounds.Radius)) {
+                if (!frustum.Intersects(local, (float)chunk.Bounds.Radius)) {
 
                     continue;
 
@@ -345,7 +369,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
                     Detail = new float4(SpaceMath.ToFloat(detail), ShowLevels ? node.Level + 1 : 0),
                     DeepWater = new float4(body.Palette.DeepWater, body.Terrain.HasOcean ? 1 : 0),
                     ShallowWater = new float4(body.Palette.ShallowWater, 0),
-                    Center = new float4(SpaceMath.ToFloat(c), 0),
+                    Center = new float4(SpaceMath.ToFloat(c), cascade),
 
                 };
 
@@ -358,52 +382,11 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
 
         }
 
-        DrawCount = draws;
+        return draws;
 
     }
 
     private static double Wrap(double value) => value - DetailPeriod * Math.Floor(value / DetailPeriod);
-
-    // Clip-space planes for v * M with reverse-Z: left, right, bottom, top, near. The far plane is at infinity.
-    private void ExtractPlanes(in float4x4 m) {
-
-        var c0 = new float4(m.X.X, m.Y.X, m.Z.X, m.W.X);
-        var c1 = new float4(m.X.Y, m.Y.Y, m.Z.Y, m.W.Y);
-        var c2 = new float4(m.X.Z, m.Y.Z, m.Z.Z, m.W.Z);
-        var c3 = new float4(m.X.W, m.Y.W, m.Z.W, m.W.W);
-
-        _planes[0] = c3 + c0;
-        _planes[1] = c3 - c0;
-        _planes[2] = c3 + c1;
-        _planes[3] = c3 - c1;
-        _planes[4] = c3 - c2;
-
-        for (var i = 0; i < _planes.Length; i++) {
-
-            var p = _planes[i];
-            var length = new float3(p.X, p.Y, p.Z).Length();
-
-            _planes[i] = length > 0 ? p / length : p;
-
-        }
-
-    }
-
-    private bool Visible(float3 center, float radius) {
-
-        foreach (var p in _planes) {
-
-            if (p.X * center.X + p.Y * center.Y + p.Z * center.Z + p.W < -radius) {
-
-                return false;
-
-            }
-
-        }
-
-        return true;
-
-    }
 
     private static ulong Combine(int body, ulong key) => key | ((ulong)body << 61);
 
@@ -412,6 +395,8 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader {
         _workers.Dispose();
 
         _device.DestroyPipeline(_pipeline, null);
+        _device.DestroyPipeline(_depthPipeline, null);
+        _device.DestroyPipeline(_shadowPipeline, null);
         _device.DestroyPipelineLayout(_layout, null);
 
         for (var i = 0; i < _staging.Length; i++) {

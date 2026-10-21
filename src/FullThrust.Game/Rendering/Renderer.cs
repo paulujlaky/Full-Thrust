@@ -8,6 +8,8 @@ public sealed class Renderer : IDisposable {
 
     public const int FramesInFlight = 2;
 
+    private const int ShadowResolution = 2048;
+
     private readonly VulkanContext _context;
 
     private readonly List<IRenderPass> _passes = [];
@@ -38,6 +40,13 @@ public sealed class Renderer : IDisposable {
         Swapchain = new Swapchain(context, framebufferSize, vsync);
         Hdr = new HdrTarget(device, Swapchain.Extent);
         Frames = new FrameResources(device);
+        Shadows = new ShadowMaps(device, ShadowResolution);
+        Prepass = new DepthPrepass();
+
+        Frames.WriteImage(GlobalBindings.ShadowMap, Shadows.View, Shadows.Sampler);
+
+        AddPass(Shadows);
+        AddPass(Prepass);
         Capture = new FrameCapture(context);
 
         _commandPool = device.CreateCommandPool(new VkCommandPoolCreateInfo {
@@ -71,12 +80,19 @@ public sealed class Renderer : IDisposable {
 
     public FrameResources Frames { get; }
 
+    public ShadowMaps Shadows { get; }
+
+    public DepthPrepass Prepass { get; }
+
     public SceneLighting Lighting { get; }
 
     public FrameCapture Capture { get; }
 
-    // Scene stage passes are built against this; Post and Overlay passes against Swapchain.RenderPass.
-    public VkRenderPass SceneRenderPass => Hdr.RenderPass;
+    // Opaque and Transparent passes are built against this; Post and Overlay passes against Swapchain.RenderPass.
+    public VkRenderPass SceneRenderPass => Hdr.OpaquePass;
+
+    // Depth-only pipelines built against this work for both the prepass and the shadow maps.
+    public VkRenderPass DepthRenderPass => Hdr.DepthPass;
 
     // Linear radiance before exposure; space is close to black.
     public float4 ClearColor { get; set; } = new(0, 0, 0, 1);
@@ -187,11 +203,32 @@ public sealed class Renderer : IDisposable {
 
         }
 
-        BeginRenderPass(cmd, Hdr.RenderPass, Hdr.Framebuffer, extent, ClearColor);
-        RecordStages(frame, RenderStage.Scene, RenderStage.Scene);
+        RecordOutside(frame, RenderStage.Prepare);
+
+        // Reverse-Z: the far plane is depth 0.
+        BeginRenderPass(cmd, Hdr.DepthPass, Hdr.DepthFramebuffer, extent, [new VkClearValue { DepthStencil = new VkClearDepthStencilValue { Depth = 0.0f } }]);
+        RecordStages(frame, RenderStage.Depth, RenderStage.Depth);
         cmd.EndRenderPass();
 
-        BeginRenderPass(cmd, Swapchain.RenderPass, Swapchain.Framebuffer(imageIndex), extent, new float4(0, 0, 0, 1));
+        RecordOutside(frame, RenderStage.AfterDepth);
+
+        BeginRenderPass(cmd, Hdr.OpaquePass, Hdr.Framebuffer, extent, [new VkClearValue { Color = new VkClearColorValue { Float32 = ClearColor } }]);
+        RecordStages(frame, RenderStage.Opaque, RenderStage.Opaque);
+        cmd.EndRenderPass();
+
+        RecordOutside(frame, RenderStage.AfterOpaque);
+
+        if (AnyEnabled(RenderStage.Transparent)) {
+
+            BeginRenderPass(cmd, Hdr.TransparentPass, Hdr.Framebuffer, extent, []);
+            RecordStages(frame, RenderStage.Transparent, RenderStage.Transparent);
+            cmd.EndRenderPass();
+
+        }
+
+        RecordOutside(frame, RenderStage.PostProcess);
+
+        BeginRenderPass(cmd, Swapchain.RenderPass, Swapchain.Framebuffer(imageIndex), extent, [new VkClearValue { Color = new VkClearColorValue { Float32 = new float4(0, 0, 0, 1) } }]);
         RecordStages(frame, RenderStage.Post, RenderStage.Overlay);
         cmd.EndRenderPass();
 
@@ -239,6 +276,36 @@ public sealed class Renderer : IDisposable {
 
     }
 
+    private void RecordOutside(in FrameContext frame, RenderStage stage) {
+
+        for (var i = 0; i < _passes.Count; i++) {
+
+            if (_passes[i].Enabled && _passes[i].Stage == stage) {
+
+                _passes[i].Record(frame);
+
+            }
+
+        }
+
+    }
+
+    private bool AnyEnabled(RenderStage stage) {
+
+        for (var i = 0; i < _passes.Count; i++) {
+
+            if (_passes[i].Enabled && _passes[i].Stage == stage) {
+
+                return true;
+
+            }
+
+        }
+
+        return false;
+
+    }
+
     private void WriteFrameUniforms(float4x4 view, float4x4 projection) {
 
         var lighting = Lighting;
@@ -267,28 +334,28 @@ public sealed class Renderer : IDisposable {
 
         };
 
+        Shadows.Update(view, projection, lighting.SunDirection);
+        Shadows.Fill(ref uniforms);
+
         Frames.Write(_frame, uniforms);
 
     }
 
-    private static unsafe void BeginRenderPass(CommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer, VkExtent2D extent, float4 clearColor) {
+    private static unsafe void BeginRenderPass(CommandBuffer cmd, VkRenderPass renderPass, VkFramebuffer framebuffer, VkExtent2D extent, ReadOnlySpan<VkClearValue> clears) {
 
-        var clears = stackalloc VkClearValue[2];
+        fixed (VkClearValue* pClears = clears) {
 
-        clears[0] = new VkClearColorValue { Float32 = clearColor };
+            cmd.BeginRenderPass(new VkRenderPassBeginInfo {
 
-        // Reverse-Z: the far plane is depth 0.
-        clears[1] = new VkClearDepthStencilValue { Depth = 0.0f, Stencil = 0 };
+                RenderPass = renderPass,
+                Framebuffer = framebuffer,
+                RenderArea = new VkRect2D(extent),
+                ClearValueCount = clears.Length,
+                ClearValues = pClears,
 
-        cmd.BeginRenderPass(new VkRenderPassBeginInfo {
+            }, VkSubpassContents.Inline);
 
-            RenderPass = renderPass,
-            Framebuffer = framebuffer,
-            RenderArea = new VkRect2D(extent),
-            ClearValueCount = 2,
-            ClearValues = clears,
-
-        }, VkSubpassContents.Inline);
+        }
 
     }
 

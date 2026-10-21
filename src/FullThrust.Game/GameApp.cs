@@ -209,7 +209,7 @@ public sealed class GameApp : IDisposable {
         _debugUi.AddPanel(new TimeWarpPanel(_warp, _clock));
         _debugUi.AddPanel(new ScenarioPanel(ResetScenario, _scene, _orbitDraw, _craftDraw, _camera, CaptureNow));
         _debugUi.AddPanel(new CraftPanel(_world, _focus, _bodies, _parts, _physicsFrame, _physics, _flight));
-        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting));
+        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting, _renderer.Shadows));
         _debugUi.AddPanel(new ControlsPanel());
 
         _origin.ShiftTo(_world.Get<Transform>(_scene.Craft).Position);
@@ -267,13 +267,17 @@ public sealed class GameApp : IDisposable {
 
         _modelLibrary = new ModelLibrary(_vulkan, _uploader, _models, Path.Combine(AppContext.BaseDirectory, _options.ModelsDirectory));
 
-        _terrain = new TerrainRenderer(_vulkan.Device, _uploader, _renderer.SceneRenderPass, _renderer.Frames.SetLayout, shaders, _bodies, _origin);
+        _terrain = new TerrainRenderer(_vulkan.Device, _uploader, _renderer.SceneRenderPass, _renderer.DepthRenderPass, _renderer.Frames.SetLayout, shaders, _bodies, _origin);
 
         _terrain.ShowLevels = _options.ShowTerrainLevels;
         _renderer.AddPass(_terrain);
-        _meshPass = new MeshPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.Frames.SetLayout, shaders, _world, _origin, _modelLibrary);
+        _meshPass = new MeshPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.DepthRenderPass, _renderer.Frames.SetLayout, shaders, _world, _origin, _modelLibrary);
 
         _renderer.AddPass(_meshPass);
+        _renderer.Prepass.AddCaster(_terrain);
+        _renderer.Prepass.AddCaster(_meshPass);
+        _renderer.Shadows.AddCaster(_terrain);
+        _renderer.Shadows.AddCaster(_meshPass);
         _renderer.AddPass(shapes);
         _renderer.AddPass(new DebugLinePass(_vulkan.Device, _renderer.SceneRenderPass, shaders, _lines));
         _renderer.AddPass(new TonemapPass(_vulkan.Device, _renderer.Swapchain.RenderPass, shaders, _renderer.Hdr, _lighting));

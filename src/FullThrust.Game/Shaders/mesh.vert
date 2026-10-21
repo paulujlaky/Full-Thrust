@@ -13,6 +13,7 @@ layout(push_constant) uniform Push {
     vec4 normal0;
     vec4 normal1;
     vec4 normal2;
+    ivec4 view;
 
 } pc;
 
@@ -20,6 +21,9 @@ layout(location = 0) out vec3 vWorldPosition;
 layout(location = 1) out vec3 vNormal;
 layout(location = 2) out vec4 vTangent;
 layout(location = 3) out vec2 vUv;
+
+// The depth prepass runs this shader too, and the opaque pass must reproduce its depth exactly.
+invariant gl_Position;
 
 void main() {
 

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Brutal;
 using Brutal.Numerics;
@@ -5,6 +6,13 @@ using Brutal.VulkanApi;
 using Brutal.VulkanApi.Abstractions;
 
 namespace FullThrust.Game.Rendering;
+
+[InlineArray(ShadowMaps.MaxCascades)]
+public struct CascadeMatrices {
+
+    private float4x4 _element;
+
+}
 
 // Mirrors the Frame block in Shaders/common.glsl (std140, so everything is a vec4 or mat4).
 [StructLayout(LayoutKind.Sequential)]
@@ -28,10 +36,31 @@ public struct FrameUniforms {
     // x exposure, y EV100, z tonemapper, w seconds.
     public float4 Exposure;
 
+    public CascadeMatrices ShadowViewProjection;
+
+    // Far view distance of each cascade.
+    public float4 ShadowSplits;
+
+    // World size of one shadow texel in each cascade.
+    public float4 ShadowTexel;
+
+    // x cascade count (0 disables), y normal offset in texels, z filter radius in texels, w tints cascades.
+    public float4 ShadowParams;
+
+}
+
+// Descriptor set 0, shared by every scene pipeline: frame uniforms plus the textures any shader may sample.
+public static class GlobalBindings {
+
+    public const int Frame = 0;
+    public const int ShadowMap = 1;
+
 }
 
 // One uniform buffer per frame in flight, bound as descriptor set 0 by every scene pipeline.
 public sealed class FrameResources : IDisposable {
+
+    private const VkShaderStageFlags AllStages = VkShaderStageFlags.VertexBit | VkShaderStageFlags.FragmentBit | VkShaderStageFlags.ComputeBit;
 
     private readonly DeviceEx _device;
 
@@ -47,13 +76,15 @@ public sealed class FrameResources : IDisposable {
 
         SetLayout = Descriptors.CreateLayout(device, [
 
-            Descriptors.Binding(0, VkDescriptorType.UniformBuffer, VkShaderStageFlags.VertexBit | VkShaderStageFlags.FragmentBit),
+            Descriptors.Binding(GlobalBindings.Frame, VkDescriptorType.UniformBuffer, AllStages),
+            Descriptors.Binding(GlobalBindings.ShadowMap, VkDescriptorType.CombinedImageSampler, AllStages),
 
         ]);
 
         _pool = Descriptors.CreatePool(device, Renderer.FramesInFlight, [
 
             new VkDescriptorPoolSize { Type = VkDescriptorType.UniformBuffer, DescriptorCount = Renderer.FramesInFlight },
+            new VkDescriptorPoolSize { Type = VkDescriptorType.CombinedImageSampler, DescriptorCount = Renderer.FramesInFlight },
 
         ]);
 
@@ -71,7 +102,7 @@ public sealed class FrameResources : IDisposable {
             _mapped[i] = _buffers[i].Map();
             _sets[i] = Descriptors.Allocate(device, _pool, SetLayout);
 
-            Descriptors.WriteUniformBuffer(device, _sets[i], 0, _buffers[i].VkBuffer, ByteSize.Of<FrameUniforms>());
+            Descriptors.WriteUniformBuffer(device, _sets[i], GlobalBindings.Frame, _buffers[i].VkBuffer, ByteSize.Of<FrameUniforms>());
 
         }
 
@@ -82,6 +113,17 @@ public sealed class FrameResources : IDisposable {
     public VkDescriptorSet Set(int frameIndex) => _sets[frameIndex];
 
     public void Write(int frameIndex, in FrameUniforms uniforms) => _mapped[frameIndex].AsSpan<FrameUniforms>()[0] = uniforms;
+
+    // Not per frame: call at load or on resize, while no frame that uses the sets is in flight.
+    public void WriteImage(int binding, VkImageView view, VkSampler sampler, VkImageLayout layout = VkImageLayout.ShaderReadOnlyOptimal) {
+
+        foreach (var set in _sets) {
+
+            Descriptors.WriteImage(_device, set, binding, view, sampler, layout);
+
+        }
+
+    }
 
     public void Dispose() {
 

@@ -3,12 +3,44 @@ using Brutal.VulkanApi;
 
 namespace FullThrust.Game.Rendering;
 
-// Scene passes draw linear HDR radiance; Post and Overlay passes draw into the swapchain after it.
+// Frame order. Stages named After* or Prepare/PostProcess run outside any render pass, so passes there
+// record their own render passes or compute; the others run inside the render pass the renderer opens.
 public enum RenderStage {
 
-    Scene,
+    // Shadow maps, lookup tables and other work the scene samples.
+    Prepare,
+
+    // Depth-only prepass into the HDR depth buffer.
+    Depth,
+
+    // Reads scene depth, e.g. ambient occlusion.
+    AfterDepth,
+
+    // HDR colour with the prepass depth.
+    Opaque,
+
+    // Reads opaque colour and depth, e.g. volumetrics.
+    AfterOpaque,
+
+    // HDR colour over read-only depth.
+    Transparent,
+
+    // HDR to HDR effects before tonemapping.
+    PostProcess,
+
+    // Swapchain.
     Post,
     Overlay,
+
+}
+
+public static class RenderStages {
+
+    public static bool IsOutsideRenderPass(RenderStage stage) {
+
+        return stage is RenderStage.Prepare or RenderStage.AfterDepth or RenderStage.AfterOpaque or RenderStage.PostProcess;
+
+    }
 
 }
 
@@ -62,5 +94,46 @@ public interface IResizeListener {
 public interface IFrameUploader {
 
     void Upload(in FrameContext frame);
+
+}
+
+public enum DepthView {
+
+    Camera,
+    Shadow,
+
+}
+
+public readonly struct DepthContext {
+
+    public readonly CommandBuffer CommandBuffer;
+
+    public readonly VkDescriptorSet FrameSet;
+
+    public readonly DepthView View;
+
+    // Shadow cascade index, or -1 for the camera.
+    public readonly int Cascade;
+
+    public readonly Frustum Frustum;
+
+    public DepthContext(CommandBuffer commandBuffer, VkDescriptorSet frameSet, DepthView view, int cascade, in Frustum frustum) {
+
+        CommandBuffer = commandBuffer;
+        FrameSet = frameSet;
+        View = view;
+        Cascade = cascade;
+        Frustum = frustum;
+
+    }
+
+}
+
+// Geometry that writes depth for the camera prepass and the sun's shadow cascades.
+public interface IDepthCaster {
+
+    bool CastsDepth { get; }
+
+    void RecordDepth(in DepthContext context);
 
 }

@@ -42,6 +42,8 @@ Parts and resources are defined in `data/parts/parts.json`; the preset rockets s
 ## Rendering
 Scene passes draw physically based (metallic-roughness) shading in linear HDR, pre-exposed for an EV100 camera, and a tonemap pass (ACES, AgX, Khronos PBR Neutral or Reinhard) resolves it to the swapchain before the overlay. The sun is defined in `data/celestial/earth-moon.json` (illuminance, colour and its yearly path), so planet rotation gives day and night. Exposure, tonemapper and ambient light are adjustable in the overlay.
 
+Each frame runs in stages: offscreen preparation (sun shadow maps), a depth prepass, the opaque scene, transparent geometry, HDR post-processing, then the swapchain. Geometry implements `IDepthCaster` to take part in the prepass and shadows. The sun casts four cascaded shadow maps whose bounds are stable as the camera turns and texel-snapped as it moves; cascade count, distance, split, filtering and bias are tunable in the overlay.
+
 Craft parts are glTF models loaded with Brutal.Gltf, including base colour, metallic-roughness, normal, occlusion and emissive textures. Each part in `data/parts/parts.json` names its model and, for third-party models, how to orient and fit it to the part. Models under `data/models/parts` and `data/models/scene` are generated from `data/models/recipes.json` by the ModelGen tool. The engine bells and the Pinnacle capsule come from public-domain NASA 3D Resources models (see `data/models/nasa/NOTICE.md`).
 
 ```sh

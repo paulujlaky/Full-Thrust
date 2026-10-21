@@ -18,7 +18,16 @@ layout(set = 0, binding = 0) uniform Frame {
 
     vec4 exposure;
 
+    mat4 shadowViewProjection[4];
+    vec4 shadowSplits;
+    vec4 shadowTexel;
+
+    // x cascade count (0 disables), y normal offset in texels, z filter radius in texels, w tints cascades.
+    vec4 shadowParams;
+
 } frame;
+
+layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
 
 const float PI = 3.14159265359;
 
@@ -106,5 +115,107 @@ vec3 ShadeSurface(Surface s, vec3 n, vec3 v, float shadow) {
     vec3 ambient = ((1.0 - ambientF) * (1.0 - s.metallic) * s.albedo * irradiance + ambientF * mix(reflected, irradiance, roughness)) / PI;
 
     return direct + ambient * s.occlusion + s.emissive;
+
+}
+
+float ViewDepth(vec3 worldPosition) {
+
+    return -(frame.view * vec4(worldPosition, 1.0)).z;
+
+}
+
+int ShadowCascade(float viewDepth) {
+
+    int count = int(frame.shadowParams.x);
+
+    for (int i = 0; i < count; i++) {
+
+        if (viewDepth < frame.shadowSplits[i]) {
+
+            return i;
+
+        }
+
+    }
+
+    return count;
+
+}
+
+// 4x4 bilinear comparison taps: a smooth 5x5-texel tent around the receiver, scaled by the filter radius.
+float SampleCascade(int cascade, vec3 worldPosition, vec3 normal) {
+
+    vec3 offset = normal * frame.shadowTexel[cascade] * frame.shadowParams.y;
+    vec4 clip = frame.shadowViewProjection[cascade] * vec4(worldPosition + offset, 1.0);
+    vec2 uv = clip.xy * 0.5 + 0.5;
+
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))) || clip.z > 1.0) {
+
+        return 1.0;
+
+    }
+
+    vec2 texel = frame.shadowParams.z / vec2(textureSize(shadowMap, 0).xy);
+    float sum = 0.0;
+
+    for (int y = 0; y < 4; y++) {
+
+        for (int x = 0; x < 4; x++) {
+
+            vec2 tap = uv + (vec2(x, y) - 1.5) * texel;
+
+            sum += texture(shadowMap, vec4(tap, float(cascade), clip.z));
+
+        }
+
+    }
+
+    return sum / 16.0;
+
+}
+
+// Sun visibility from the cascades; the last tenth of each cascade blends into the next so seams do not show.
+float SunShadow(vec3 worldPosition, vec3 normal) {
+
+    int count = int(frame.shadowParams.x);
+
+    if (count == 0) {
+
+        return 1.0;
+
+    }
+
+    float depth = ViewDepth(worldPosition);
+    int cascade = ShadowCascade(depth);
+
+    if (cascade >= count) {
+
+        return 1.0;
+
+    }
+
+    float shadow = SampleCascade(cascade, worldPosition, normal);
+
+    float end = frame.shadowSplits[cascade];
+    float start = cascade == 0 ? 0.0 : frame.shadowSplits[cascade - 1];
+    float blend = smoothstep(end - (end - start) * 0.1, end, depth);
+
+    if (blend > 0.0) {
+
+        float next = cascade + 1 < count ? SampleCascade(cascade + 1, worldPosition, normal) : 1.0;
+
+        shadow = mix(shadow, next, blend);
+
+    }
+
+    return shadow;
+
+}
+
+vec3 CascadeTint(vec3 worldPosition) {
+
+    const vec3 tints[5] = vec3[](vec3(1.0, 0.35, 0.35), vec3(0.35, 1.0, 0.35), vec3(0.35, 0.5, 1.0), vec3(1.0, 1.0, 0.35), vec3(1.0));
+
+    return frame.shadowParams.w > 0.5 ? tints[min(ShadowCascade(ViewDepth(worldPosition)), 4)] : vec3(1.0);
 
 }

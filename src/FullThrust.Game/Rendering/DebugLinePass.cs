@@ -60,7 +60,7 @@ public sealed class DebugLinePass : IRenderPass {
 
     public string Name => "Debug Lines";
 
-    public RenderStage Stage => RenderStage.Scene;
+    public RenderStage Stage => RenderStage.Opaque;
 
     public bool Enabled { get; set; } = true;
 

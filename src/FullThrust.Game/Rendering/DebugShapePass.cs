@@ -71,7 +71,7 @@ public sealed class DebugShapePass : IRenderPass {
 
     public string Name => "Debug Shapes";
 
-    public RenderStage Stage => RenderStage.Scene;
+    public RenderStage Stage => RenderStage.Opaque;
 
     public bool Enabled { get; set; } = true;
 

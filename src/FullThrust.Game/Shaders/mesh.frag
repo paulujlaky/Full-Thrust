@@ -70,6 +70,10 @@ void main() {
 
     vec3 v = normalize(frame.cameraPosition.xyz - vWorldPosition);
 
-    outColor = vec4(Expose(ShadeSurface(s, n, v, 1.0)), 1.0);
+    vec3 geometric = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
+
+    s.albedo *= CascadeTint(vWorldPosition);
+
+    outColor = vec4(Expose(ShadeSurface(s, n, v, SunShadow(vWorldPosition, geometric))), 1.0);
 
 }

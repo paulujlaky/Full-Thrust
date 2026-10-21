@@ -10,7 +10,7 @@ using FullThrust.Core.Space;
 namespace FullThrust.Game.Rendering;
 
 // Draws every entity with a ModelInstance using the glTF metallic-roughness materials.
-public sealed class MeshPass : IRenderPass {
+public sealed class MeshPass : IRenderPass, IDepthCaster {
 
     private readonly DeviceEx _device;
 
@@ -22,7 +22,11 @@ public sealed class MeshPass : IRenderPass {
     private readonly VkPipeline _singleSided;
     private readonly VkPipeline _doubleSided;
 
-    public unsafe MeshPass(DeviceEx device, VkRenderPass renderPass, VkDescriptorSetLayout frameLayout, ShaderLibrary shaders, World world, FloatingOrigin origin, ModelLibrary models) {
+    private readonly VkPipeline _depthSingleSided;
+    private readonly VkPipeline _depthDoubleSided;
+    private readonly VkPipeline _shadow;
+
+    public unsafe MeshPass(DeviceEx device, VkRenderPass renderPass, VkRenderPass depthPass, VkDescriptorSetLayout frameLayout, ShaderLibrary shaders, World world, FloatingOrigin origin, ModelLibrary models) {
 
         _device = device;
         _world = world;
@@ -53,13 +57,30 @@ public sealed class MeshPass : IRenderPass {
 
         _doubleSided = Pipelines.Create(device, shaders, desc);
 
+        desc.RenderPass = depthPass;
+        desc.FragmentShader = null;
+        desc.Cull = VkCullModeFlags.BackBit;
+
+        _depthSingleSided = Pipelines.Create(device, shaders, desc);
+
+        desc.Cull = VkCullModeFlags.None;
+
+        _depthDoubleSided = Pipelines.Create(device, shaders, desc);
+
+        desc.VertexShader = "mesh_shadow.vert";
+        desc.ShadowCaster = true;
+
+        _shadow = Pipelines.Create(device, shaders, desc);
+
     }
 
     public string Name => "Meshes";
 
-    public RenderStage Stage => RenderStage.Scene;
+    public RenderStage Stage => RenderStage.Opaque;
 
     public bool Enabled { get; set; } = true;
+
+    public bool CastsDepth => Enabled;
 
     public int DrawCount { get; private set; }
 
@@ -72,6 +93,27 @@ public sealed class MeshPass : IRenderPass {
 
         _models.ResetStats();
 
+        DrawAll(cmd, _singleSided, _doubleSided, false, -1);
+
+        DrawCount = _models.DrawCalls;
+
+    }
+
+    public void RecordDepth(in DepthContext context) {
+
+        var cmd = context.CommandBuffer;
+        var single = context.View == DepthView.Shadow ? _shadow : _depthSingleSided;
+        var both = context.View == DepthView.Shadow ? _shadow : _depthDoubleSided;
+
+        cmd.BindPipeline(VkPipelineBindPoint.Graphics, single);
+        cmd.BindDescriptorSet(VkPipelineBindPoint.Graphics, _layout, 0, context.FrameSet, []);
+
+        DrawAll(cmd, single, both, true, context.Cascade);
+
+    }
+
+    private void DrawAll(CommandBuffer cmd, VkPipeline single, VkPipeline both, bool depthOnly, int cascade) {
+
         foreach (var row in _world.Query<Transform, ModelInstance>()) {
 
             ref readonly var transform = ref row.C1;
@@ -79,11 +121,9 @@ public sealed class MeshPass : IRenderPass {
             var rotation = float4x4.CreateFromQuaternion(SpaceMath.ToFloat(transform.Rotation));
             var entity = rotation * float4x4.CreateTranslation(_origin.ToLocal(transform.Position));
 
-            _models.Draw(cmd, _layout, _singleSided, _doubleSided, row.C2.Model, entity, rotation);
+            _models.Draw(cmd, _layout, single, both, row.C2.Model, entity, rotation, depthOnly, cascade);
 
         }
-
-        DrawCount = _models.DrawCalls;
 
     }
 
@@ -91,6 +131,9 @@ public sealed class MeshPass : IRenderPass {
 
         _device.DestroyPipeline(_singleSided, null);
         _device.DestroyPipeline(_doubleSided, null);
+        _device.DestroyPipeline(_depthSingleSided, null);
+        _device.DestroyPipeline(_depthDoubleSided, null);
+        _device.DestroyPipeline(_shadow, null);
         _device.DestroyPipelineLayout(_layout, null);
 
     }
