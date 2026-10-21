@@ -13,20 +13,78 @@ public sealed class RenderingPanel : IDebugPanel {
     private readonly ModelLibrary _models;
     private readonly SceneLighting _lighting;
     private readonly ShadowMaps _shadows;
+    private readonly AmbientOcclusion _occlusion;
 
-    public RenderingPanel(TerrainRenderer terrain, MeshPass meshes, ModelLibrary models, SceneLighting lighting, ShadowMaps shadows) {
+    public RenderingPanel(TerrainRenderer terrain, MeshPass meshes, ModelLibrary models, SceneLighting lighting, ShadowMaps shadows, AmbientOcclusion occlusion) {
 
         _terrain = terrain;
         _meshes = meshes;
         _models = models;
         _lighting = lighting;
         _shadows = shadows;
+        _occlusion = occlusion;
 
     }
 
     public string Title => "Rendering";
 
     public bool Visible { get; set; } = true;
+
+    private void DrawOcclusion() {
+
+        ImGui.SeparatorText("Ambient occlusion"u8);
+
+        var active = _occlusion.Active;
+
+        if (ImGui.Checkbox("GTAO"u8, ref active)) {
+
+            _occlusion.Active = active;
+
+        }
+
+        ImGui.SameLine();
+
+        var show = _occlusion.ShowOcclusion;
+
+        if (ImGui.Checkbox("Show occlusion"u8, ref show)) {
+
+            _occlusion.ShowOcclusion = show;
+
+        }
+
+        var radius = _occlusion.Radius;
+
+        if (ImGui.SliderFloat("Radius"u8, ref radius, 0.1f, 20.0f, "%.2f m"u8, ImGuiSliderFlags.Logarithmic)) {
+
+            _occlusion.Radius = radius;
+
+        }
+
+        var falloff = _occlusion.Falloff;
+
+        if (ImGui.SliderFloat("Falloff"u8, ref falloff, 0.05f, 1.0f, "%.2f"u8)) {
+
+            _occlusion.Falloff = falloff;
+
+        }
+
+        var power = _occlusion.Power;
+
+        if (ImGui.SliderFloat("Power"u8, ref power, 0.5f, 4.0f, "%.2f"u8)) {
+
+            _occlusion.Power = power;
+
+        }
+
+        var pixels = _occlusion.MaxRadiusPixels;
+
+        if (ImGui.SliderFloat("Max radius"u8, ref pixels, 8.0f, 256.0f, "%.0f px"u8)) {
+
+            _occlusion.MaxRadiusPixels = pixels;
+
+        }
+
+    }
 
     private void DrawShadows() {
 
@@ -128,6 +186,7 @@ public sealed class RenderingPanel : IDebugPanel {
         ImGui.Text($"Sky {_lighting.SkyIrradiance.Y:F0} lx  ground {_lighting.GroundIrradiance.Y:F0} lx");
 
         DrawShadows();
+        DrawOcclusion();
 
         ImGui.SeparatorText("Meshes"u8);
         ImGui.Text($"Models {_models.ModelCount}  draw calls {_meshes.DrawCount}");

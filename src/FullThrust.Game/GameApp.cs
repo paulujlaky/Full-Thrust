@@ -56,6 +56,9 @@ public sealed class GameOptions {
 
     public bool ShowTerrainLevels;
 
+    // Replaces the shaded scene with a debug view for captures: "ao" or "cascades".
+    public string? DebugView;
+
     public double TimeScale = 1;
 
     public string CaptureDirectory = "captures";
@@ -104,6 +107,7 @@ public sealed class GameApp : IDisposable {
     private ModelLibrary? _modelLibrary;
     private TerrainRenderer? _terrain;
     private MeshPass? _meshPass;
+    private AmbientOcclusion? _occlusion;
 
     private readonly World _world = new();
     private readonly SystemScheduler _systems = new();
@@ -209,7 +213,7 @@ public sealed class GameApp : IDisposable {
         _debugUi.AddPanel(new TimeWarpPanel(_warp, _clock));
         _debugUi.AddPanel(new ScenarioPanel(ResetScenario, _scene, _orbitDraw, _craftDraw, _camera, CaptureNow));
         _debugUi.AddPanel(new CraftPanel(_world, _focus, _bodies, _parts, _physicsFrame, _physics, _flight));
-        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting, _renderer.Shadows));
+        _debugUi.AddPanel(new RenderingPanel(_terrain!, _meshPass!, _modelLibrary!, _lighting, _renderer.Shadows, _occlusion!));
         _debugUi.AddPanel(new ControlsPanel());
 
         _origin.ShiftTo(_world.Get<Transform>(_scene.Craft).Position);
@@ -274,6 +278,10 @@ public sealed class GameApp : IDisposable {
         _meshPass = new MeshPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.DepthRenderPass, _renderer.Frames.SetLayout, shaders, _world, _origin, _modelLibrary);
 
         _renderer.AddPass(_meshPass);
+        _occlusion = new AmbientOcclusion(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames) { ShowOcclusion = _options.DebugView == "ao" };
+        _renderer.Shadows.ShowCascades = _options.DebugView == "cascades";
+        _renderer.AddPass(_occlusion);
+
         _renderer.Prepass.AddCaster(_terrain);
         _renderer.Prepass.AddCaster(_meshPass);
         _renderer.Shadows.AddCaster(_terrain);

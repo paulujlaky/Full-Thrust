@@ -137,3 +137,10 @@ public interface IDepthCaster {
     void RecordDepth(in DepthContext context);
 
 }
+
+// Passes that publish settings or results to every shader through the frame uniforms; called even when disabled.
+public interface IFrameUniformsWriter {
+
+    void Fill(ref FrameUniforms uniforms, bool enabled);
+
+}

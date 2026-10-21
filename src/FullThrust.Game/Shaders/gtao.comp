@@ -1,0 +1,144 @@
+#version 450
+
+#include "ao_common.glsl"
+
+const int Slices = 3;
+const int Steps = 6;
+const float HalfPi = 1.5707963;
+
+float FastAcos(float x) {
+
+    float ax = abs(x);
+    float r = (-0.156583 * ax + HalfPi) * sqrt(1.0 - ax);
+
+    return x >= 0.0 ? r : 3.14159265 - r;
+
+}
+
+ivec2 Clamp(ivec2 p) {
+
+    return clamp(p, ivec2(0), pc.size.xy - 1);
+
+}
+
+// Picks the neighbour on the flatter side, so normals do not bleed across depth edges.
+vec3 ViewNormal(ivec2 pixel, vec3 center) {
+
+    vec3 left = ViewPosition(Clamp(pixel - ivec2(1, 0)));
+    vec3 right = ViewPosition(Clamp(pixel + ivec2(1, 0)));
+    vec3 up = ViewPosition(Clamp(pixel - ivec2(0, 1)));
+    vec3 down = ViewPosition(Clamp(pixel + ivec2(0, 1)));
+
+    vec3 dx = abs(right.z - center.z) < abs(center.z - left.z) ? right - center : center - left;
+    vec3 dy = abs(down.z - center.z) < abs(center.z - up.z) ? down - center : center - up;
+
+    vec3 n = normalize(cross(dy, dx));
+
+    return dot(n, -center) < 0.0 ? -n : n;
+
+}
+
+// Ground-truth ambient occlusion (Jimenez et al. 2016), after Intel's XeGTAO.
+void main() {
+
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+
+    if (any(greaterThanEqual(pixel, pc.size.xy))) {
+
+        return;
+
+    }
+
+    float depth = texelFetch(sceneDepth, pixel, 0).r;
+    vec3 position = ViewPosition(pixel);
+    float distance = -position.z;
+
+    // World metres per pixel at this distance, to turn the radius into pixels.
+    float pixelsPerMetre = pc.projection.y * 0.5 * float(pc.size.y) / distance;
+    float radiusPixels = min(pc.params.x * pixelsPerMetre, pc.params.w);
+
+    if (depth <= 0.0 || radiusPixels < 1.5) {
+
+        imageStore(rawOcclusion, pixel, vec4(1.0));
+
+        return;
+
+    }
+
+    float radius = radiusPixels / pixelsPerMetre;
+    vec3 normal = ViewNormal(pixel, position);
+    vec3 viewVec = normalize(-position);
+
+    float falloffRange = pc.params.y * radius;
+    float falloffMul = -1.0 / falloffRange;
+    float falloffAdd = (radius - falloffRange) / falloffRange + 1.0;
+
+    float sliceNoise = OrderedNoise(pixel);
+    float stepNoise = OrderedNoise(pixel + ivec2(2, 1));
+    float minStep = 1.3 / radiusPixels;
+
+    float visibility = 0.0;
+
+    for (int slice = 0; slice < Slices; slice++) {
+
+        float phi = (float(slice) + sliceNoise) * 3.14159265 / float(Slices);
+        vec2 omega = vec2(cos(phi), -sin(phi)) * radiusPixels;
+
+        vec3 direction = vec3(cos(phi), sin(phi), 0.0);
+        vec3 orthoDirection = direction - dot(direction, viewVec) * viewVec;
+        vec3 axis = normalize(cross(orthoDirection, viewVec));
+        vec3 projectedNormal = normal - axis * dot(normal, axis);
+        float projectedLength = length(projectedNormal);
+
+        float signNormal = sign(dot(orthoDirection, projectedNormal));
+        float cosNormal = clamp(dot(projectedNormal, viewVec) / max(projectedLength, 1e-5), 0.0, 1.0);
+        float n = signNormal * FastAcos(cosNormal);
+
+        float lowCos0 = cos(n + HalfPi);
+        float lowCos1 = cos(n - HalfPi);
+        float horizonCos0 = lowCos0;
+        float horizonCos1 = lowCos1;
+
+        for (int step = 0; step < Steps; step++) {
+
+            float s = (float(step) + stepNoise) / float(Steps);
+
+            s = mix(minStep, 1.0, s * s);
+
+            ivec2 offset = ivec2(round(omega * s));
+
+            vec3 delta0 = ViewPosition(Clamp(pixel + offset)) - position;
+            vec3 delta1 = ViewPosition(Clamp(pixel - offset)) - position;
+
+            float length0 = length(delta0);
+            float length1 = length(delta1);
+
+            float cos0 = dot(delta0 / max(length0, 1e-6), viewVec);
+            float cos1 = dot(delta1 / max(length1, 1e-6), viewVec);
+
+            float weight0 = clamp(length0 * falloffMul + falloffAdd, 0.0, 1.0);
+            float weight1 = clamp(length1 * falloffMul + falloffAdd, 0.0, 1.0);
+
+            horizonCos0 = max(horizonCos0, mix(lowCos0, cos0, weight0));
+            horizonCos1 = max(horizonCos1, mix(lowCos1, cos1, weight1));
+
+        }
+
+        float h0 = -FastAcos(horizonCos1);
+        float h1 = FastAcos(horizonCos0);
+
+        h0 = n + clamp(h0 - n, -HalfPi, HalfPi);
+        h1 = n + clamp(h1 - n, -HalfPi, HalfPi);
+
+        float arc0 = (cosNormal + 2.0 * h0 * sin(n) - cos(2.0 * h0 - n)) * 0.25;
+        float arc1 = (cosNormal + 2.0 * h1 * sin(n) - cos(2.0 * h1 - n)) * 0.25;
+
+        visibility += projectedLength * (arc0 + arc1);
+
+    }
+
+    visibility = clamp(visibility / float(Slices), 0.0, 1.0);
+
+    imageStore(rawOcclusion, pixel, vec4(pow(visibility, pc.params.z)));
+
+}

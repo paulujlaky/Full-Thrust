@@ -6,7 +6,7 @@ namespace FullThrust.Game.Rendering;
 
 // Cascaded shadow maps for the sun. Each cascade bounds a slice of the view frustum with a sphere, so its size
 // never changes as the camera turns, and snaps to whole texels in light space, so edges do not crawl as it moves.
-public sealed class ShadowMaps : IRenderPass {
+public sealed class ShadowMaps : IRenderPass, IFrameUniformsWriter {
 
     public const int MaxCascades = 4;
 
@@ -207,7 +207,7 @@ public sealed class ShadowMaps : IRenderPass {
 
     }
 
-    public void Fill(ref FrameUniforms uniforms) {
+    public void Fill(ref FrameUniforms uniforms, bool enabled) {
 
         for (var i = 0; i < MaxCascades; i++) {
 

@@ -72,8 +72,9 @@ void main() {
 
     vec3 geometric = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
 
+    s.occlusion *= ScreenOcclusion(gl_FragCoord.xy, s.albedo);
     s.albedo *= CascadeTint(vWorldPosition);
 
-    outColor = vec4(Expose(ShadeSurface(s, n, v, SunShadow(vWorldPosition, geometric))), 1.0);
+    outColor = SceneOutput(ShadeSurface(s, n, v, SunShadow(vWorldPosition, geometric)), gl_FragCoord.xy);
 
 }

@@ -25,9 +25,13 @@ layout(set = 0, binding = 0) uniform Frame {
     // x cascade count (0 disables), y normal offset in texels, z filter radius in texels, w tints cascades.
     vec4 shadowParams;
 
+    // x: 1 when the ambient occlusion image holds this frame's result.
+    vec4 aoParams;
+
 } frame;
 
 layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
+layout(set = 0, binding = 2) uniform sampler2D ambientOcclusion;
 
 const float PI = 3.14159265359;
 
@@ -217,5 +221,38 @@ vec3 CascadeTint(vec3 worldPosition) {
     const vec3 tints[5] = vec3[](vec3(1.0, 0.35, 0.35), vec3(0.35, 1.0, 0.35), vec3(0.35, 0.5, 1.0), vec3(1.0, 1.0, 0.35), vec3(1.0));
 
     return frame.shadowParams.w > 0.5 ? tints[min(ShadowCascade(ViewDepth(worldPosition)), 4)] : vec3(1.0);
+
+}
+
+// Screen-space occlusion with Jimenez's multi-bounce fit, which brightens it on light surfaces.
+float ScreenOcclusion(vec2 fragCoord, vec3 albedo) {
+
+    if (frame.aoParams.x < 0.5) {
+
+        return 1.0;
+
+    }
+
+    float visibility = texelFetch(ambientOcclusion, ivec2(fragCoord), 0).r;
+    float luminance = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
+
+    float a = 2.0404 * luminance - 0.3324;
+    float b = -4.7951 * luminance + 0.6417;
+    float c = 2.7552 * luminance + 0.6903;
+
+    return max(visibility, ((visibility * a + b) * visibility + c) * visibility);
+
+}
+
+// The overlay can show the raw occlusion in place of the shaded scene.
+vec4 SceneOutput(vec3 radiance, vec2 fragCoord) {
+
+    if (frame.aoParams.y > 0.5) {
+
+        return vec4(texelFetch(ambientOcclusion, ivec2(fragCoord), 0).rrr, 1.0);
+
+    }
+
+    return vec4(Expose(radiance), 1.0);
 
 }

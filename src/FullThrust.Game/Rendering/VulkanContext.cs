@@ -109,13 +109,19 @@ public sealed class VulkanContext : IDisposable {
         };
 
         var supported = PhysicalDevice.GetFeatures();
-        if (!supported.DepthClamp) {
+        if (!supported.DepthClamp || !supported.ShaderStorageImageExtendedFormats) {
 
-            throw new InvalidOperationException("The GPU does not support depth clamping, which shadow maps need.");
+            throw new InvalidOperationException("The GPU lacks depth clamping or extended storage image formats, which shadows and compute effects need.");
 
         }
 
-        var features = new VkPhysicalDeviceFeatures { SamplerAnisotropy = supported.SamplerAnisotropy, DepthClamp = true };
+        var features = new VkPhysicalDeviceFeatures {
+
+            SamplerAnisotropy = supported.SamplerAnisotropy,
+            DepthClamp = true,
+            ShaderStorageImageExtendedFormats = true,
+
+        };
 
         SamplerAnisotropy = supported.SamplerAnisotropy ? Math.Min(16.0f, PhysicalDevice.GetProperties().Limits.MaxSamplerAnisotropy) : 1.0f;
         var features13 = new VkPhysicalDeviceVulkan13Features { Synchronization2 = true };

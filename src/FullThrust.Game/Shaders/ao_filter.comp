@@ -1,0 +1,39 @@
+#version 450
+
+#include "ao_common.glsl"
+
+// 4x4 depth-aware box that removes the ordered noise without blurring across silhouettes.
+void main() {
+
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+
+    if (any(greaterThanEqual(pixel, pc.size.xy))) {
+
+        return;
+
+    }
+
+    float center = ViewDistance(texelFetch(sceneDepth, pixel, 0).r);
+    float tolerance = center * 0.03 + 0.02;
+
+    float sum = 0.0;
+    float weights = 0.0;
+
+    for (int y = -2; y < 2; y++) {
+
+        for (int x = -2; x < 2; x++) {
+
+            ivec2 tap = clamp(pixel + ivec2(x, y), ivec2(0), pc.size.xy - 1);
+            float distance = ViewDistance(texelFetch(sceneDepth, tap, 0).r);
+            float weight = max(0.0, 1.0 - abs(distance - center) / tolerance);
+
+            sum += imageLoad(rawOcclusion, tap).r * weight;
+            weights += weight;
+
+        }
+
+    }
+
+    imageStore(filteredOcclusion, pixel, vec4(weights > 0.0 ? sum / weights : 1.0));
+
+}

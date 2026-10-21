@@ -335,7 +335,16 @@ public sealed class Renderer : IDisposable {
         };
 
         Shadows.Update(view, projection, lighting.SunDirection);
-        Shadows.Fill(ref uniforms);
+
+        for (var i = 0; i < _passes.Count; i++) {
+
+            if (_passes[i] is IFrameUniformsWriter writer) {
+
+                writer.Fill(ref uniforms, _passes[i].Enabled);
+
+            }
+
+        }
 
         Frames.Write(_frame, uniforms);
 

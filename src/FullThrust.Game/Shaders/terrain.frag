@@ -118,8 +118,9 @@ void main() {
 
     }
 
+    s.occlusion *= ScreenOcclusion(gl_FragCoord.xy, s.albedo);
     s.albedo *= CascadeTint(vWorldPosition);
 
-    outColor = vec4(Expose(ShadeSurface(s, n, v, SunShadow(vWorldPosition, normalize(vNormal)))), 1.0);
+    outColor = SceneOutput(ShadeSurface(s, n, v, SunShadow(vWorldPosition, normalize(vNormal))), gl_FragCoord.xy);
 
 }

@@ -78,6 +78,26 @@ public static class Descriptors {
 
     }
 
+    public static unsafe void WriteStorageImage(Device device, VkDescriptorSet set, int binding, VkImageView view) {
+
+        var info = new VkDescriptorImageInfo { ImageView = view, ImageLayout = VkImageLayout.General };
+
+        device.UpdateDescriptorSets([
+
+            new VkWriteDescriptorSet {
+
+                DstSet = set,
+                DstBinding = binding,
+                DescriptorCount = 1,
+                DescriptorType = VkDescriptorType.StorageImage,
+                ImageInfo = &info,
+
+            },
+
+        ], []);
+
+    }
+
     public static unsafe void WriteImage(Device device, VkDescriptorSet set, int binding, VkImageView view, VkSampler sampler, VkImageLayout layout = VkImageLayout.ShaderReadOnlyOptimal) {
 
         var info = new VkDescriptorImageInfo { ImageView = view, Sampler = sampler, ImageLayout = layout };

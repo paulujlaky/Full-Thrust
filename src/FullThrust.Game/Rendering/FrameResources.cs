@@ -47,6 +47,9 @@ public struct FrameUniforms {
     // x cascade count (0 disables), y normal offset in texels, z filter radius in texels, w tints cascades.
     public float4 ShadowParams;
 
+    // x: 1 when the ambient occlusion image holds this frame's result.
+    public float4 AmbientOcclusion;
+
 }
 
 // Descriptor set 0, shared by every scene pipeline: frame uniforms plus the textures any shader may sample.
@@ -54,6 +57,10 @@ public static class GlobalBindings {
 
     public const int Frame = 0;
     public const int ShadowMap = 1;
+    public const int AmbientOcclusion = 2;
+
+    // Every binding after Frame is a combined image sampler; add new ones here and in common.glsl.
+    public const int Count = 3;
 
 }
 
@@ -74,17 +81,22 @@ public sealed class FrameResources : IDisposable {
 
         _device = device;
 
-        SetLayout = Descriptors.CreateLayout(device, [
+        Span<VkDescriptorSetLayoutBinding> bindings = stackalloc VkDescriptorSetLayoutBinding[GlobalBindings.Count];
 
-            Descriptors.Binding(GlobalBindings.Frame, VkDescriptorType.UniformBuffer, AllStages),
-            Descriptors.Binding(GlobalBindings.ShadowMap, VkDescriptorType.CombinedImageSampler, AllStages),
+        bindings[0] = Descriptors.Binding(GlobalBindings.Frame, VkDescriptorType.UniformBuffer, AllStages);
 
-        ]);
+        for (var i = 1; i < GlobalBindings.Count; i++) {
+
+            bindings[i] = Descriptors.Binding(i, VkDescriptorType.CombinedImageSampler, AllStages);
+
+        }
+
+        SetLayout = Descriptors.CreateLayout(device, bindings);
 
         _pool = Descriptors.CreatePool(device, Renderer.FramesInFlight, [
 
             new VkDescriptorPoolSize { Type = VkDescriptorType.UniformBuffer, DescriptorCount = Renderer.FramesInFlight },
-            new VkDescriptorPoolSize { Type = VkDescriptorType.CombinedImageSampler, DescriptorCount = Renderer.FramesInFlight },
+            new VkDescriptorPoolSize { Type = VkDescriptorType.CombinedImageSampler, DescriptorCount = Renderer.FramesInFlight * (GlobalBindings.Count - 1) },
 
         ]);
 
