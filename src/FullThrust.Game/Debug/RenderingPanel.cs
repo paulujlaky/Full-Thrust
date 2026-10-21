@@ -77,6 +77,14 @@ public sealed class RenderingPanel : IDebugPanel {
 
         }
 
+        var falloff = _bloom.Falloff;
+
+        if (ImGui.SliderFloat("Bloom falloff"u8, ref falloff, 0.2f, 1.0f, "%.2f"u8)) {
+
+            _bloom.Falloff = falloff;
+
+        }
+
     }
 
     private void DrawBackground() {

@@ -96,6 +96,9 @@ public sealed class BloomPass : IRenderPass, IResizeListener {
     // Share of the final image that is bloom; a lens scatters a few percent of light this way.
     public float Intensity { get; set; } = 0.04f;
 
+    // Weight of each wider octave against the one inside it; below 1 the glare falls off faster than 1/r^2, as a lens's does.
+    public float Falloff { get; set; } = 0.6f;
+
     // Tent filter radius in texels of each lower level.
     public float Radius { get; set; } = 1.0f;
 
@@ -170,9 +173,19 @@ public sealed class BloomPass : IRenderPass, IResizeListener {
 
         }
 
+        var weights = 0.0f;
+
+        for (var i = 0; i < Levels; i++) {
+
+            weights += MathF.Pow(Falloff, i);
+
+        }
+
         for (var i = Levels - 2; i >= 0; i--) {
 
-            _upsample.Dispatch(cmd, default, _upSets[i], new float4(Radius, 0, 0, 0), ComputeKernel.Groups(_up[i].Width, GroupSize), ComputeKernel.Groups(_up[i].Height, GroupSize), 1);
+            var scale = i == 0 ? 1 / weights : 1;
+
+            _upsample.Dispatch(cmd, default, _upSets[i], new float4(Radius, Falloff, scale, 0), ComputeKernel.Groups(_up[i].Width, GroupSize), ComputeKernel.Groups(_up[i].Height, GroupSize), 1);
             Barriers.ComputeToShaders(cmd);
 
         }
