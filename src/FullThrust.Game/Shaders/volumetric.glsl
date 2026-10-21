@@ -207,8 +207,11 @@ VolumeSample CloudLayer(VolumePrimitive v, vec3 p) {
 
     }
 
+    // Coarse towers: their height gives the tops relief that a low sun picks out, even from orbit.
+    float towers = texture(shapeNoise, body * (v.params2.z * 0.125) + 0.37).r;
+
     // Flat bases and rounded tops that rise where the weather is densest.
-    float top = 0.35 + 0.65 * weather;
+    float top = (0.35 + 0.65 * weather) * (0.6 + 0.4 * towers);
     float gradient = clamp(Remap(h, 0.0, 0.08, 0.0, 1.0), 0.0, 1.0) * clamp(Remap(h, top * 0.6, top, 1.0, 0.0), 0.0, 1.0);
 
     if (gradient <= 0.0) {
@@ -220,13 +223,7 @@ VolumeSample CloudLayer(VolumePrimitive v, vec3 p) {
     // Far away the billows fade to a value that keeps about the same area covered.
     float shapeWeight = 1.0 - smoothstep(0.1, 0.4, volumeFootprint * v.params2.z);
     float detailWeight = 1.0 - smoothstep(0.1, 0.4, volumeFootprint * v.params2.w);
-    float billows = 0.85;
-
-    if (shapeWeight < 1.0) {
-
-        billows = 0.6 + 0.4 * texture(shapeNoise, body * (v.params2.z * 0.125) + 0.37).r;
-
-    }
+    float billows = 0.55 + 0.45 * towers;
 
     if (shapeWeight > 0.0) {
 
@@ -366,7 +363,11 @@ void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, fl
 
         for (int octave = 0; octave < 4; octave++) {
 
-            scattered += a * sun * exp(-shadow * b) * mix(HenyeyGreenstein(cosTheta, g * c), HenyeyGreenstein(cosTheta, -0.3 * c), 0.25);
+            // Beer-Powder (Schneider 2015) on the first octave: thin, sun-facing edges darken, sculpting the billows.
+            float attenuation = exp(-shadow * b);
+            float powder = octave == 0 ? mix(1.0, 2.0 * (1.0 - exp(-2.0 * shadow)), 0.5) : 1.0;
+
+            scattered += a * sun * attenuation * powder * mix(HenyeyGreenstein(cosTheta, g * c), HenyeyGreenstein(cosTheta, -0.3 * c), 0.25);
             a *= 0.7;
             b *= 0.3;
             c *= 0.4;
