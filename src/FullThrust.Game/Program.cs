@@ -44,6 +44,7 @@ options.TimeScale = Number("--time-scale", 1);
 options.SmokeStages = (int)Number("--stage", 0);
 options.SmokeAutoStage = args.Contains("--auto-stage");
 options.SmokeSas = args.Contains("--sas");
+options.GcEvery = (int)Number("--gc-every", 0);
 
 if (Value("--translate")?.Split(',') is [var tx, var ty, var tz]) {
 

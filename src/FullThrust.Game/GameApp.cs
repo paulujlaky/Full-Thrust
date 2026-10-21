@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime;
 using Brutal.GlfwApi;
 using Brutal.Logging;
 using Brutal.Numerics;
@@ -91,6 +92,9 @@ public sealed class GameOptions {
     public bool SmokeSas;
 
     public float3 SmokeTranslation;
+
+    // Forces a full compacting collection every this many frames, so heap corruption and untracked references surface early.
+    public int GcEvery;
 
     public int CaptureEvery;
 
@@ -443,6 +447,13 @@ public sealed class GameApp : IDisposable {
             Frame(frameSeconds);
 
             _stats.EndFrame(frameSeconds);
+
+            if (_options.GcEvery > 0 && _stats.FrameCount % _options.GcEvery == 0) {
+
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(2, GCCollectionMode.Forced, true, true);
+
+            }
 
             if (!smoke) {
 

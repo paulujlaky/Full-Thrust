@@ -36,6 +36,16 @@ dotnet run --project src/FullThrust.Game -- --rocket harrier --scenario launchpa
 
 In game, F12 saves a screenshot. Flight keys: Space stages, Shift/Ctrl throttle (Z full, X cut), W/S A/D Q/E attitude, T toggles SAS, R toggles RCS, I/K J/L H/N translate, P pauses.
 
+### Known issues
+On the development machine (an i9-13900K on microcode 0x115) the game crashes now and then, mostly at startup, with an access violation, null reference or out-of-range index in `GradientNoise.Noise` on a terrain worker thread, or an internal CLR error on the main thread. The fault follows the CPU's performance cores rather than the code: the stress tool below, which builds terrain chunks while forcing compacting collections and needs neither the game, Vulkan nor Jolt, crashed in 14 of 16 unpinned runs and 5 of 8 runs pinned to the P-cores, but never in 8 runs pinned to the E-cores. That matches the 13th/14th generation Raptor Lake instability that Intel's 0x12B and later microcode addresses, so update the BIOS before chasing such crashes in code. The tool takes seconds, worker threads and an optional affinity mask; it prints a summary when it survives.
+
+```sh
+dotnet run tools/GcStress/GcStress.cs -- 15
+dotnet run tools/GcStress/GcStress.cs -- 15 4 FFFF0000
+```
+
+`--gc-every N` forces a full compacting collection every N frames in the game, to surface heap problems early.
+
 ## Craft and flight
 Parts and resources are defined in `data/parts/parts.json`; the preset rockets selectable at launch are in `data/rockets/rockets.json`. Craft fly on patched-conic rails until they thrust, enter an atmosphere, approach a surface or separate stages, at which point they are simulated as Jolt rigid bodies in a double-precision frame that follows the focus craft.
 
