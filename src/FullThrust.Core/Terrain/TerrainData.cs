@@ -14,6 +14,14 @@ public sealed class TerrainData {
     // Night-side city lights: luminance of a dense core in cd/m2, 0 for none.
     public double CityLights { get; set; }
 
+    // Mean spacing in metres of the places on the town and city lattices.
+    public double TownSpacing { get; set; } = 9000;
+
+    public double CitySpacing { get; set; } = 70000;
+
+    // Share of habitable land inside settled regions.
+    public double Settled { get; set; } = 0.35;
+
     // Large-scale shape: features per unit radius for continents or maria.
     public double ContinentFrequency { get; set; } = 1.6;
 

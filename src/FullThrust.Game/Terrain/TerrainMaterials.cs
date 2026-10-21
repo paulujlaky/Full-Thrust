@@ -33,6 +33,9 @@ public struct TerrainBodyUniforms {
     public float4 TileScale0;
     public float4 TileScale1;
 
+    // x, y: town and city lattice cells per unit of body direction; z: settled share; w: seed.
+    public float4 Settlements;
+
     // rgb: palette colour; w: 1 / mean luminance of the channel's texture.
     public ChannelVectors Palette;
 
@@ -62,7 +65,7 @@ public sealed class TerrainMaterials : IDisposable {
     private readonly VkSampler _sampler;
     private readonly VkDescriptorPool _pool;
 
-    public TerrainMaterials(DeviceEx device, GpuUploader uploader, float anisotropy, string texturesRoot, IReadOnlyList<(TerrainData Data, TerrainPalette Palette)> bodies) {
+    public TerrainMaterials(DeviceEx device, GpuUploader uploader, float anisotropy, string texturesRoot, IReadOnlyList<(TerrainData Data, TerrainPalette Palette, double Radius)> bodies) {
 
         _device = device;
 
@@ -74,7 +77,7 @@ public sealed class TerrainMaterials : IDisposable {
 
         var layers = new List<string>();
 
-        foreach (var (data, _) in bodies) {
+        foreach (var (data, _, _) in bodies) {
 
             foreach (var material in data.Materials) {
 
@@ -105,7 +108,7 @@ public sealed class TerrainMaterials : IDisposable {
 
         for (var b = 0; b < bodies.Count; b++) {
 
-            uniforms[b] = Describe(bodies[b].Data, bodies[b].Palette, layers, means);
+            uniforms[b] = Describe(bodies[b].Data, bodies[b].Palette, bodies[b].Radius, layers, means);
 
         }
 
@@ -154,12 +157,14 @@ public sealed class TerrainMaterials : IDisposable {
 
     public VkDescriptorSet Set { get; }
 
-    private static TerrainBodyUniforms Describe(TerrainData data, TerrainPalette palette, List<string> layers, float4[] means) {
+    private static TerrainBodyUniforms Describe(TerrainData data, TerrainPalette palette, double radius, List<string> layers, float4[] means) {
 
         var result = new TerrainBodyUniforms {
 
             DeepWater = new float4(palette.DeepWater, data.Ocean ? 1 : 0),
             ShallowWater = new float4(palette.ShallowWater, (float)data.CityLights),
+
+            Settlements = new float4((float)(radius / data.TownSpacing), (float)(radius / data.CitySpacing), (float)data.Settled, data.Seed & 0xFFFF),
 
         };
 

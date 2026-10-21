@@ -94,7 +94,7 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
         }
 
         _bodies = bodies.ToArray();
-        _materials = new TerrainMaterials(device, uploader, anisotropy, texturesRoot, bodies.Select(b => (b.Data, b.Palette)).ToArray());
+        _materials = new TerrainMaterials(device, uploader, anisotropy, texturesRoot, bodies.Select(b => (b.Data, b.Palette, b.Body.Radius)).ToArray());
         _workers = new TerrainWorkers(JobCount, Math.Clamp(Environment.ProcessorCount - 3, 1, 4));
 
         for (var i = 0; i < SlotCount; i++) {

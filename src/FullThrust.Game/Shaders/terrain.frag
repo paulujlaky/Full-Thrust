@@ -93,28 +93,127 @@ vec3 SrgbToLinear(vec3 c) {
 
 }
 
-// Night-side city lights in cd/m2: settled regions a thousand kilometres across, metros of tens of kilometres within them, kilometre-scale grain.
-vec3 CityLights(vec3 direction, vec3 detail, float height, float metresPerPixel, float luminance) {
+// Turns the city lattice against the town lattice, so their cells never line up into rows.
+const mat3 Tilt = mat3(0.36, 0.48, -0.8, -0.8, 0.6, 0.0, 0.48, 0.64, 0.6);
+
+// PCG4D (Jarzynski and Olano 2020): jitter and a lottery value for one lattice cell.
+vec4 CellRandom(vec3 cell, uint seed) {
+
+    uvec4 v = uvec4(uvec3(ivec3(cell)), seed);
+
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.w;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v.w += v.y * v.z;
+    v ^= v >> 16u;
+    v.x += v.y * v.w;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v.w += v.y * v.z;
+
+    return vec4(v & 0xFFFFFFu) / 16777215.0;
+
+}
+
+// Mean light of Places per unit of chance: the integral of one place's profile over the rank-size law.
+const float PlacesMean = 0.010;
+
+// Places on a jittered lattice, q in cells on a sphere: sizes follow a rank-size law, so most are villages and only a few grow large.
+float Places(vec3 q, float footprint, float chance, float warp, float ragged, uint seed) {
+
+    vec3 base = floor(q - 0.5);
+    float sphere = length(q);
+    float light = 0.0;
+
+    for (int i = 0; i < 8; i++) {
+
+        vec3 cell = base + vec3(i & 1, (i >> 1) & 1, i >> 2);
+        vec4 r = CellRandom(cell, seed);
+        vec3 centre = normalize(cell + r.xyz) * sphere;
+
+        // A place drops onto the surface and belongs to the cell it lands in, so every cell the surface crosses can hold one.
+        if (r.w >= chance || floor(centre) != cell) {
+
+            continue;
+
+        }
+
+        // Zipf's law: the share of places larger than a size falls as one over that size.
+        float size = 0.03 / max(r.w / chance, 0.03);
+        float radius = 0.3 * sqrt(size);
+
+        // Kept within half a cell even when warped, so the eight nearest cells hold every place that reaches this pixel.
+        float spread = min(sqrt(radius * radius + footprint * footprint), 0.3);
+        float t = distance(q, centre) * (0.6 + 0.8 * warp) / spread;
+
+        // A dense core inside a dimmer sprawl whose edge frays into fingers and gaps.
+        float profile = 0.55 * exp(-8.0 * t * t) + 0.45 * (1.0 - smoothstep(0.35, 0.75, t + (ragged - 0.5) * 0.9));
+
+        light += (0.3 + 0.7 * size) * radius * radius / (spread * spread) * profile * 2.0;
+
+    }
+
+    // Once places shrink below a pixel their light averages out rather than sparkling.
+    return mix(light, chance * PlacesMean, smoothstep(0.2, 0.37, footprint));
+
+}
+
+// Night-side city lights in cd/m2: settled regions from untiled noise, villages and towns on one lattice, cities on a coarser tilted one.
+vec3 CityLights(vec3 direction, vec3 detail, float height, float metresPerPixel, float radiansPerPixel, vec4 settlements, float luminance) {
 
     // Towns favour wet lowlands and coasts, and shun ice, bare rock and the high deserts.
     float habitable = clamp(vWeights0.x + 0.3 * vWeights0.y + 0.8 * vWeights0.w - vWeights1.y - 0.5 * vWeights1.x, 0.0, 1.0);
     float lowland = exp(-max(height, 0.0) / 900.0);
     float temperate = 1.0 - smoothstep(0.82, 0.92, abs(direction.y));
+    float livable = habitable * lowland * temperate;
 
-    float settled = smoothstep(0.5, 0.78, texture(cloudNoise, direction * 2.3 + vec3(0.17, 0.61, 0.29)).r);
+    if (livable <= 0.0) {
 
-    // Towns gather at cell centres; a slower field decides which grow into cities, so most cells stay small and dim.
-    float towns = pow(smoothstep(0.45, 0.95, texture(cloudNoise, direction * 160.0 + vec3(0.43, 0.07, 0.81)).g), 3.0);
-    float growth = smoothstep(0.5, 0.8, texture(cloudNoise, direction * 37.0 + vec3(0.62, 0.33, 0.05)).r);
-    float lottery = texture(cloudNoise, direction * 160.0 + vec3(0.11, 0.87, 0.47)).r;
-    float metro = towns * (0.15 + 1.85 * growth) * 3.0 * lottery * lottery * lottery;
-    float rural = 0.008 * smoothstep(0.4, 0.8, texture(cloudNoise, direction * 640.0 + vec3(0.29, 0.53, 0.11)).b);
+        return vec3(0.0);
+
+    }
+
+    vec3 d = direction * 3.0;
+    float region = ValueNoise(d, DetailPeriod) * 0.5 + ValueNoise(Tilt * d * 2.7, DetailPeriod) * 0.3 + ValueNoise(d * 7.9 + 31.0, DetailPeriod) * 0.2;
+
+    // The fbm's spread is about 0.1, so this threshold leaves roughly the settled share above it.
+    float threshold = 0.5 + (0.5 - settlements.z) * 0.26;
+    float settled = smoothstep(threshold - 0.06, threshold + 0.06, region) * livable;
+
+    if (settled <= 0.0) {
+
+        return vec3(0.0);
+
+    }
+
+    uint seed = uint(settlements.w);
+    vec3 towns = direction * settlements.x;
+    vec3 cities = Tilt * direction * settlements.y;
+
+    float townWarp = ValueNoise(towns * 1.7, DetailPeriod) * 0.6 + ValueNoise(towns * 6.3 + 11.0, DetailPeriod) * 0.4;
+    float cityWarp = ValueNoise(cities * 2.3, DetailPeriod) * 0.5 + ValueNoise(cities * 7.1 + 17.0, DetailPeriod) * 0.3 + ValueNoise(cities * 23.0 + 3.0, DetailPeriod) * 0.2;
+
+    // Frayed edges down to a couple of hundred metres, settling to their mean once a pixel spans them.
+    float ragged = 0.5;
+
+    if (metresPerPixel < 1200.0) {
+
+        ragged = mix(ValueNoise(towns * 19.0, DetailPeriod) * 0.6 + ValueNoise(towns * 47.0 + 7.0, DetailPeriod) * 0.4, 0.5, smoothstep(150.0, 1200.0, metresPerPixel));
+
+    }
+
+    // Places crowd into corridors a few hundred kilometres long, leaving thin country between them.
+    float crowding = settled * (0.3 + 1.4 * ValueNoise(Tilt * direction * 24.0 + 5.0, DetailPeriod));
+
+    float places = Places(towns, radiansPerPixel * settlements.x, min(0.7 * crowding, 1.0), townWarp, ragged, seed) + 2.5 * Places(cities, radiansPerPixel * settlements.y, 0.5 * crowding, cityWarp, ragged, seed + 7919u);
 
     // Street grain averages to its mean once a pixel covers a few blocks, so cities do not sparkle from orbit.
     float grain = texture(cloudNoise, detail * (1.0 / 2048.0) + vec3(0.71, 0.37, 0.19)).a;
     float streets = mix(smoothstep(0.35, 0.75, grain) * 2.2, 1.0, smoothstep(60.0, 400.0, metresPerPixel));
+    float districts = mix(0.3 + 1.4 * texture(cloudNoise, detail * (1.0 / 16384.0) + vec3(0.23, 0.91, 0.57)).b, 1.0, smoothstep(300.0, 2500.0, metresPerPixel));
 
-    float density = habitable * lowland * temperate * settled * (metro + rural) * streets;
+    float density = places * streets * districts;
     vec3 sodium = vec3(1.0, 0.62, 0.3);
 
     return mix(sodium, vec3(1.0, 0.9, 0.75), smoothstep(0.4, 1.2, density)) * density * luminance;
@@ -135,6 +234,8 @@ void main() {
     vec3 detailDx = dFdx(vDetail);
     vec3 detailDy = dFdy(vDetail);
     float metresPerPixel = length(abs(detailDx) + abs(detailDy));
+    vec3 bodyUp = normalize(transpose(mat3(pc.model)) * normalize(vUp));
+    float radiansPerPixel = length(fwidth(bodyUp));
 
     // Smooth index picking which shifted copy of each tile to show, so tiling never forms a lattice.
     float variant = ValueNoise(vDetail * (1.0 / 64.0), DetailPeriod / 64.0) * 8.0;
@@ -319,7 +420,7 @@ void main() {
 
         if (night > 0.0) {
 
-            s.emissive += CityLights(normalize(transpose(mat3(pc.model)) * up), vDetail, vHeight, metresPerPixel, body.shallowWater.w) * night;
+            s.emissive += CityLights(bodyUp, vDetail, vHeight, metresPerPixel, radiansPerPixel, body.settlements, body.shallowWater.w) * night;
 
         }
 
