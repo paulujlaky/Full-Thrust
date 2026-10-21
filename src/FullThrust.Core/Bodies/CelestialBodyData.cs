@@ -118,6 +118,11 @@ public sealed class ScatteringData {
 
     public double MieScaleHeight { get; set; } = 1200;
 
+    // Extra aerosol mixed into the lowest air, as a multiple of the sea-level Mie density, thinning out towards its top; what lets sun shafts show.
+    public double BoundaryLayer { get; set; }
+
+    public double BoundaryLayerHeight { get; set; } = 1500;
+
     // Henyey-Greenstein asymmetry of the aerosols.
     public double MieAnisotropy { get; set; } = 0.8;
 

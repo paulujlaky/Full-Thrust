@@ -34,7 +34,7 @@ layout(set = 0, binding = 0) uniform Frame {
     // x top radius, y Mie anisotropy, z 1 when enabled, w ozone half width.
     vec4 atmosphereShape;
 
-    // Coefficients per metre at the surface; w holds the scale height, or the ozone peak altitude.
+    // Coefficients per metre at the surface; w holds the scale height, the ozone peak altitude, the boundary-layer aerosol multiple (mieExtinction) or its top (groundAlbedo).
     vec4 rayleighScattering;
     vec4 mieScattering;
     vec4 mieExtinction;

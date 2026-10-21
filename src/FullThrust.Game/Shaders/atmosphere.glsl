@@ -41,7 +41,8 @@ struct Medium {
 Medium SampleMedium(float height) {
 
     float rayleighDensity = exp(-max(height, 0.0) / frame.rayleighScattering.w);
-    float mieDensity = exp(-max(height, 0.0) / frame.mieScattering.w);
+    // Extra boundary-layer aerosol (mieExtinction.w times sea level) thins out over the top half of its height (groundAlbedo.w).
+    float mieDensity = exp(-max(height, 0.0) / frame.mieScattering.w) + frame.mieExtinction.w * (1.0 - smoothstep(0.5, 1.0, max(height, 0.0) / max(frame.groundAlbedo.w, 1.0)));
     float ozoneDensity = max(0.0, 1.0 - abs(height - frame.ozoneAbsorption.w) / frame.atmosphereShape.w);
 
     Medium m;

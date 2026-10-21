@@ -29,8 +29,8 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
 
     private const int GroupSize = 8;
 
-    private const int AerialWidth = 128;
-    private const int AerialHeight = 72;
+    private const int AerialWidth = 192;
+    private const int AerialHeight = 108;
     private const int AerialSlices = 64;
 
     private const double MarchFromAltitude = 30_000;
@@ -164,9 +164,9 @@ public sealed class AtmosphereRenderer : IRenderPass, IFrameUniformsWriter {
             Shape = new float4(radius + (float)s.Height, (float)s.MieAnisotropy, 1, (float)s.OzoneHalfWidth),
             RayleighScattering = new float4(Vector(s.Rayleigh), (float)s.RayleighScaleHeight),
             MieScattering = new float4(mie, mie, mie, (float)s.MieScaleHeight),
-            MieExtinction = new float4(mieExtinction, mieExtinction, mieExtinction, 0),
+            MieExtinction = new float4(mieExtinction, mieExtinction, mieExtinction, (float)s.BoundaryLayer),
             OzoneAbsorption = new float4(Vector(s.Ozone), (float)s.OzoneCenter),
-            GroundAlbedo = new float4(Vector(s.GroundAlbedo), 0),
+            GroundAlbedo = new float4(Vector(s.GroundAlbedo), (float)s.BoundaryLayerHeight),
             AerialPerspective = new float4(_aerialDistance, AerialSlices, 1, _marchWeight),
 
         };
