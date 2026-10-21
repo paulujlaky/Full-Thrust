@@ -1,10 +1,10 @@
 {
-  // Exhaust look by fuel. Brightness scales a core luminance of 4e5 cd/m2; soot is extinction relative to the exit radius.
+  // Exhaust look by fuel. Brightness scales a core luminance of 4e5 cd/m2; soot is extinction relative to the exit radius; trail is extinction per metre across fresh smoke left in dense air.
   "styles": [
-    { "fuel": "RP-1", "core": [1.0, 0.56, 0.22], "brightness": 1.0, "soot": 0.5, "albedo": [0.2, 0.18, 0.16], "sheath": [1.0, 0.5, 0.25], "coreWhiteness": 0.7 },
-    { "fuel": "Ethanol", "core": [0.85, 0.62, 1.0], "brightness": 0.35, "soot": 0.05, "albedo": [0.5, 0.5, 0.5], "sheath": [1.0, 0.8, 0.55], "coreWhiteness": 0.4 },
-    { "fuel": "LH2", "core": [0.55, 0.65, 1.0], "brightness": 0.08, "soot": 0.0, "albedo": [0.8, 0.8, 0.8], "sheath": [0.9, 0.7, 1.0], "coreWhiteness": 0.3 },
-    { "fuel": "Aerozine-50", "core": [1.0, 0.62, 0.4], "brightness": 0.2, "soot": 0.02, "albedo": [0.6, 0.55, 0.5], "sheath": [1.0, 0.55, 0.35], "coreWhiteness": 0.4 },
-    { "fuel": "Hydrazine", "core": [0.9, 0.85, 0.8], "brightness": 0.02, "soot": 0.0, "albedo": [0.8, 0.8, 0.8], "sheath": [1.0, 1.0, 1.0], "coreWhiteness": 0.0 }
+    { "fuel": "RP-1", "core": [1.0, 0.56, 0.22], "brightness": 1.0, "soot": 0.5, "albedo": [0.2, 0.18, 0.16], "sheath": [1.0, 0.5, 0.25], "coreWhiteness": 0.7, "trail": 0.35, "trailAlbedo": [0.74, 0.73, 0.71] },
+    { "fuel": "Ethanol", "core": [0.85, 0.62, 1.0], "brightness": 0.35, "soot": 0.05, "albedo": [0.5, 0.5, 0.5], "sheath": [1.0, 0.8, 0.55], "coreWhiteness": 0.4, "trail": 0.15, "trailAlbedo": [0.88, 0.88, 0.88] },
+    { "fuel": "LH2", "core": [0.55, 0.65, 1.0], "brightness": 0.08, "soot": 0.0, "albedo": [0.8, 0.8, 0.8], "sheath": [0.9, 0.7, 1.0], "coreWhiteness": 0.3, "trail": 0.06, "trailAlbedo": [0.95, 0.95, 0.95] },
+    { "fuel": "Aerozine-50", "core": [1.0, 0.62, 0.4], "brightness": 0.2, "soot": 0.02, "albedo": [0.6, 0.55, 0.5], "sheath": [1.0, 0.55, 0.35], "coreWhiteness": 0.4, "trail": 0.12, "trailAlbedo": [0.84, 0.72, 0.58] },
+    { "fuel": "Hydrazine", "core": [0.9, 0.85, 0.8], "brightness": 0.02, "soot": 0.0, "albedo": [0.8, 0.8, 0.8], "sheath": [1.0, 1.0, 1.0], "coreWhiteness": 0.0, "trail": 0.0 }
   ]
 }

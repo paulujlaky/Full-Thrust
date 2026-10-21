@@ -20,7 +20,7 @@ public struct ResolvePush {
 // Ray-marches every volume source at half resolution after the opaque scene, accumulates it over frames, and Composite blends it in.
 public sealed class VolumetricRenderer : IRenderPass, IResizeListener, IFrameUniformsWriter {
 
-    public const int Capacity = 64;
+    public const int Capacity = 96;
 
     private const int GroupSize = 8;
     private const int HeaderBytes = 16;

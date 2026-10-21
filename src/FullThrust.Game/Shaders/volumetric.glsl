@@ -3,6 +3,10 @@
 const int VolumeNoiseSphere = 1;
 const int VolumePlume = 2;
 const int VolumeCloudLayer = 3;
+const int VolumeTrail = 4;
+
+// Metres per period of the noise in exhaust trails; matches TrailSource.NoiseScale.
+const float TrailNoiseScale = 40.0;
 
 // Mirrors VolumePrimitive in Rendering/Volumetrics/VolumePrimitive.cs.
 struct VolumePrimitive {
@@ -260,7 +264,48 @@ VolumeSample CloudLayer(VolumePrimitive v, vec3 p) {
 
 }
 
+// Exhaust trail capsule: params0 and params1 the older and newer ends with radii, medium.w and params2.w their extinctions, axis turns into the body-fixed noise placed by params2.xyz.
+VolumeSample Trail(VolumePrimitive v, vec3 p) {
+
+    VolumeSample s;
+
+    s.extinction = 0.0;
+    s.emission = vec3(0.0);
+
+    vec3 a = v.params0.xyz;
+    vec3 ab = v.params1.xyz - a;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    vec3 coord = QuaternionRotate(v.axis, p - a) / TrailNoiseScale + v.params2.xyz;
+
+    // Slow swells bulge the column into the puffs a rising exhaust cloud breaks into.
+    float swell = 0.7 + 0.6 * texture(shapeNoise, coord * 0.3).g;
+    float radial = length(p - a - ab * t) / (mix(v.params0.w, v.params1.w, t) * swell);
+
+    if (radial >= 1.0) {
+
+        return s;
+
+    }
+
+    float shape = texture(shapeNoise, coord).r;
+    float erosion = texture(detailNoise, coord * 3.0).r;
+
+    float base = (1.0 - smoothstep(0.15, 1.0, radial)) * (0.3 + 0.7 * shape);
+    float density = clamp(Remap(base, 0.15 + 0.35 * erosion, 1.0, 0.0, 1.0), 0.0, 1.0);
+
+    s.extinction = density * mix(v.medium.w, v.params2.w, t);
+
+    return s;
+
+}
+
 VolumeSample SampleVolume(VolumePrimitive v, vec3 p) {
+
+    if (v.kind.x == VolumeTrail) {
+
+        return Trail(v, p);
+
+    }
 
     if (v.kind.x == VolumeCloudLayer) {
 

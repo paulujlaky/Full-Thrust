@@ -25,6 +25,11 @@ public sealed class PlumeStyleData {
     // How far the hot core near the nozzle washes out towards white.
     public double CoreWhiteness { get; set; } = 0.6;
 
+    // Smoke left in dense air, as extinction per metre across a fresh trail, and its colour.
+    public double Trail { get; set; }
+
+    public double[] TrailAlbedo { get; set; } = [0.8, 0.8, 0.8];
+
 }
 
 public sealed class PlumeStylesData {
@@ -80,6 +85,8 @@ public sealed class PlumeSource : IVolumeSource, IFrameUniformsWriter {
     public bool Visible { get; set; } = true;
 
     public int Count { get; private set; }
+
+    public PlumeStyleData? StyleFor(int fuel) => fuel >= 0 && fuel < _styles.Length ? _styles[fuel] : null;
 
     public void Collect(VolumeList volumes) {
 

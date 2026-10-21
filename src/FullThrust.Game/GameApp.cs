@@ -136,6 +136,7 @@ public sealed class GameApp : IDisposable {
     private VolumetricRenderer? _volumetrics;
     private PlumeSource? _plumes;
     private CloudSource? _clouds;
+    private TrailSource? _trails;
     private ExposureController? _exposure;
     private BloomPass? _bloom;
 
@@ -340,6 +341,9 @@ public sealed class GameApp : IDisposable {
 
         _plumes = new PlumeSource(_world, _origin, _parts, Path.Combine(AppContext.BaseDirectory, "data", "effects", "plumes.json"));
         _volumetrics.AddSource(_plumes);
+
+        _trails = new TrailSource(_world, _bodies, _origin, _plumes);
+        _volumetrics.AddSource(_trails);
 
         _clouds = new CloudSource(_bodies, _origin);
         _volumetrics.AddSource(_clouds);
@@ -673,6 +677,7 @@ public sealed class GameApp : IDisposable {
         _terrain?.Prepare(_camera.Camera.Position, _clock.UniversalTime);
         _atmosphere?.Update(_camera.Camera.Position, _clock.UniversalTime);
         _clouds?.Update(_camera.Camera.Position, _clock.UniversalTime);
+        _trails?.Update(_clock.UniversalTime);
         _renderer.Render(size, _camera.Camera.ViewMatrix(_origin), _camera.Camera.ProjectionMatrix(aspect));
         _debugUi.EndFrame();
 
