@@ -293,12 +293,81 @@ public class TerrainTests {
     }
 
     [Fact]
+    public void MoonCratersHaveNoCliffsAlongCellBoundaries() {
+
+        const double step = 50;
+
+        foreach (var (latitude, longitude, heading) in new[] { (0.1, 0.3, 0.0), (-0.4, 1.2, 1.1), (0.7, -2.0, 2.3), (0.02, 2.9, 0.8) }) {
+
+            var origin = CelestialSystem.BodyFixedPoint(Moon, latitude, longitude, 0) / Moon.Radius;
+            var east = double3.Normalize(double3.Cross(double3.UnitY, origin));
+            var north = double3.Cross(origin, east);
+            var direction = east * Math.Cos(heading) + north * Math.Sin(heading);
+            var previous = Moon.GroundHeight(origin, step);
+
+            for (var i = 1; i < 6000; i++) {
+
+                var angle = i * step / Moon.Radius;
+                var point = origin * Math.Cos(angle) + direction * Math.Sin(angle);
+                var height = Moon.GroundHeight(point, step);
+
+                Assert.True(Math.Abs(height - previous) < 1.5 * step, $"{Math.Abs(height - previous):F0} m jump at step {i} from ({latitude}, {longitude})");
+
+                previous = height;
+
+            }
+
+        }
+
+    }
+
+    // The least sloping of a grid of sites around a point, so resting tests do not depend on where craters fall.
+    private static (double Latitude, double Longitude) FlattestSite(CelestialBody body, double latitude, double longitude) {
+
+        var best = (latitude, longitude);
+        var bestSlope = double.MaxValue;
+        var step = 200.0 / body.Radius;
+
+        for (var i = -5; i <= 5; i++) {
+
+            for (var j = -5; j <= 5; j++) {
+
+                var lat = latitude + i * step;
+                var lon = longitude + j * step;
+                var slope = 0.0;
+
+                foreach (var (dLat, dLon) in (ReadOnlySpan<(double, double)>)[(1, 0), (-1, 0), (0, 1), (0, -1)]) {
+
+                    var around = CelestialSystem.BodyFixedPoint(body, lat + dLat * 5 / body.Radius, lon + dLon * 5 / body.Radius, 0);
+                    var centre = CelestialSystem.BodyFixedPoint(body, lat, lon, 0);
+
+                    slope = Math.Max(slope, Math.Abs(body.GroundHeight(double3.Normalize(around), 0.5) - body.GroundHeight(double3.Normalize(centre), 0.5)));
+
+                }
+
+                if (slope < bestSlope) {
+
+                    best = (lat, lon);
+                    bestSlope = slope;
+
+                }
+
+            }
+
+        }
+
+        return best;
+
+    }
+
+    [Fact]
     public void RocketRestsOnTheMoonsTerrain() {
 
         using var harness = new FlightHarness();
 
         var moon = harness.Moon;
-        var craft = harness.SpawnOnSurface("pinnacle", moon, 0.2, 0.4);
+        var (latitude, longitude) = FlattestSite(moon, 0.2, 0.4);
+        var craft = harness.SpawnOnSurface("pinnacle", moon, latitude, longitude);
 
         harness.Run(3);
 

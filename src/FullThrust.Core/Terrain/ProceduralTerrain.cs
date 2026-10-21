@@ -202,7 +202,8 @@ public sealed class ProceduralTerrain : ITerrain {
             var bx = Math.Floor(q.X - 0.5);
             var by = Math.Floor(q.Y - 0.5);
             var bz = Math.Floor(q.Z - 0.5);
-            var density = _data.CraterDensity * (1 - 0.6 * mare);
+            // Doubled because only about half the candidate centres lie near enough the surface to be kept.
+            var density = Math.Min(1, 2 * _data.CraterDensity * (1 - 0.6 * mare));
 
             for (var corner = 0; corner < 8; corner++) {
 
@@ -219,6 +220,14 @@ public sealed class ProceduralTerrain : ITerrain {
                 }
 
                 var centre = new double3(cx + 0.25 + 0.5 * Hash(cx, cy, cz, scale, 1), cy + 0.25 + 0.5 * Hash(cx, cy, cz, scale, 2), cz + 0.25 + 0.5 * Hash(cx, cy, cz, scale, 3)) * cell;
+
+                // Projecting a centre onto the sphere moves it; past a quarter cell the eight-cell search could miss it and cut the crater off.
+                if (Math.Abs(centre.Length() - _radius) > 0.25 * cell) {
+
+                    continue;
+
+                }
+
                 var surface = double3.Normalize(centre) * _radius;
                 var r = radius * (0.5 + 0.5 * Hash(cx, cy, cz, scale, 4));
                 var distance = (point - surface).Length() / r;
