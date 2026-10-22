@@ -8,7 +8,6 @@ const int VolumeShock = 5;
 
 // Metres per period of the noise in exhaust trails; matches TrailSource.NoiseScale.
 const float TrailNoiseScale = 40.0;
-
 // Mirrors VolumePrimitive in Rendering/Volumetrics/VolumePrimitive.cs.
 struct VolumePrimitive {
 
@@ -216,7 +215,8 @@ VolumeSample CloudLayer(VolumePrimitive v, vec3 p) {
     }
 
     // Coarse towers: their height gives the tops relief that a low sun picks out, even from orbit.
-    float towers = texture(shapeNoise, body * (v.params2.z * 0.125) + 0.37).r;
+    vec4 coarse = texture(shapeNoise, body * (v.params2.z * 0.125) + 0.37);
+    float towers = coarse.r;
 
     // Flat bases and rounded tops that rise where the weather is densest.
     float top = (0.35 + 0.65 * weather) * (0.6 + 0.4 * towers);
@@ -238,7 +238,10 @@ VolumeSample CloudLayer(VolumePrimitive v, vec3 p) {
         vec4 shape = texture(shapeNoise, body * v.params2.z + vec3(v.params2.x, 0.0, 0.0));
         float fbm = shape.g * 0.625 + shape.b * 0.25 + shape.a * 0.125;
 
-        billows = mix(billows, clamp(Remap(shape.r, fbm - 1.0, 1.0, 0.0, 1.0), 0.0, 1.0), shapeWeight);
+        // The billows tile every shape period, so in thin weather their few peaks line up; cells of the coarse field, a period across, decide which rise.
+        float rise = 0.85 + 0.3 * coarse.b;
+
+        billows = mix(billows, clamp(Remap(shape.r * rise, fbm - 1.0, 1.0, 0.0, 1.0), 0.0, 1.0), shapeWeight);
 
     }
 
