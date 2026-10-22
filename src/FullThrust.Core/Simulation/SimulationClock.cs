@@ -9,9 +9,10 @@ public sealed class SimulationClock {
     private double _frameRealDelta;
     private double _frameSimDelta;
 
-    public SimulationClock(ITimeWarp warp) {
+    public SimulationClock(ITimeWarp warp, double universalTime = 0) {
 
         Warp = warp;
+        UniversalTime = universalTime;
 
     }
 

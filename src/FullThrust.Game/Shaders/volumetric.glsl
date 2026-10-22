@@ -454,7 +454,7 @@ void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, fl
         vec3 sun = SunIlluminanceAt(p);
         float shadow = SunOpticalDepth(v, p, sunDirection);
         vec3 up = normalize(PlanetRelative(p));
-        vec3 ambient = (AmbientIrradiance(p, up) + AmbientIrradiance(p, -up)) / (4.0 * PI);
+        vec3 ambient = (AmbientIrradiance(p, up) + AmbientIrradiance(p, -up)) / (4.0 * PI) * EclipseSkylight(p);
 
         // Multiple scattering as fading octaves of the single-scattering term (Wrenninge 2013).
         vec3 scattered = vec3(0.0);

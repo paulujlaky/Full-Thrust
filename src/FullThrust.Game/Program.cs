@@ -41,6 +41,7 @@ options.CaptureDirectory = Value("--capture-dir") ?? options.CaptureDirectory;
 options.CameraPitch = Number("--camera-pitch", double.NaN);
 options.CameraYaw = Number("--camera-yaw", double.NaN);
 options.TimeScale = Number("--time-scale", 1);
+options.StartTime = Number("--ut", 0);
 options.SmokeStages = (int)Number("--stage", 0);
 options.SmokeAutoStage = args.Contains("--auto-stage");
 options.SmokeSas = args.Contains("--sas");

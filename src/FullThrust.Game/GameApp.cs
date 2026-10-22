@@ -81,6 +81,9 @@ public sealed class GameOptions {
 
     public double TimeScale = 1;
 
+    // Universal time in seconds the game starts at.
+    public double StartTime;
+
     public string CaptureDirectory = "captures";
 
     // Non-zero runs a scripted smoke test: warm up, measure this many frames, log a summary and exit.
@@ -194,7 +197,7 @@ public sealed class GameApp : IDisposable {
 
         }
 
-        _clock = new SimulationClock(_warp) { TimeScale = options.TimeScale };
+        _clock = new SimulationClock(_warp, options.StartTime) { TimeScale = options.TimeScale };
         _world.Reserve(ReservedEntities);
 
         var root = AppContext.BaseDirectory;

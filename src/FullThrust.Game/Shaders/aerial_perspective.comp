@@ -76,9 +76,10 @@ void main() {
 
                 float t = a + (float(i) + 0.5) * dt;
                 vec3 p = origin + direction * t;
-                float visibility = mix(CloudShadow(p + frame.atmosphereCenter.xyz), 1.0, smoothstep(ShadowFadeStart, ShadowFadeEnd, t)) * dot(EclipseLight(p + frame.atmosphereCenter.xyz), vec3(1.0 / 3.0));
+                vec3 eclipse = EclipseLight(p + frame.atmosphereCenter.xyz);
+                float visibility = mix(CloudShadow(p + frame.atmosphereCenter.xyz), 1.0, smoothstep(ShadowFadeStart, ShadowFadeEnd, t)) * dot(eclipse, vec3(1.0 / 3.0));
 
-                ShadowedScatterStep(p, dt, sunDirection, rayleighPhase, miePhase, visibility, result, lost);
+                ShadowedScatterStep(p, dt, sunDirection, rayleighPhase, miePhase, visibility, eclipse + (1.0 - eclipse) * EclipseHorizonGlow, result, lost);
 
             }
 

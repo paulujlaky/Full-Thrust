@@ -270,8 +270,12 @@ void main() {
 
             }
 
-            // Under a moon's shadow the whole sky dims with the sun.
-            sky *= EclipseLight(frame.cameraPosition.xyz);
+            // Under a moon's shadow the sky overhead goes dark while low, long paths reach the lit air beyond it.
+            if (EclipseNear()) {
+
+                sky *= EclipseSky(origin, direction);
+
+            }
 
             transmittance = ground ? vec3(0.0) : Transmittance(r, dot(direction, origin / r));
 

@@ -198,8 +198,8 @@ struct ScatteringResult {
 
 };
 
-// One segment of length dt around p added to a running integral, direct sunlight dimmed by shadow; the single scattering it removed goes to lost.
-void ShadowedScatterStep(vec3 p, float dt, vec3 sunDirection, float rayleighPhase, float miePhase, float visibility, inout ScatteringResult result, inout vec3 lost) {
+// One segment added to a running integral: visibility dims direct sun (what it removes goes to lost), skylight the multiply scattered light an eclipse takes.
+void ShadowedScatterStep(vec3 p, float dt, vec3 sunDirection, float rayleighPhase, float miePhase, float visibility, vec3 skylight, inout ScatteringResult result, inout vec3 lost) {
 
     float r = length(p);
     float sunCos = dot(sunDirection, p / r);
@@ -210,7 +210,7 @@ void ShadowedScatterStep(vec3 p, float dt, vec3 sunDirection, float rayleighPhas
 
     vec3 single = Transmittance(r, sunCos) * SunVisibility(r, sunCos) * (m.rayleighScattering * rayleighPhase + m.mieScattering * miePhase);
 
-    result.luminance += weight * (single * visibility + MultipleScattering(r, sunCos) * m.scattering);
+    result.luminance += weight * (single * visibility + MultipleScattering(r, sunCos) * m.scattering * skylight);
     result.transmittance *= stepTransmittance;
     lost += weight * single * (1.0 - visibility);
 
@@ -220,7 +220,7 @@ void ScatterStep(vec3 p, float dt, vec3 sunDirection, float rayleighPhase, float
 
     vec3 lost = vec3(0.0);
 
-    ShadowedScatterStep(p, dt, sunDirection, rayleighPhase, miePhase, 1.0, result, lost);
+    ShadowedScatterStep(p, dt, sunDirection, rayleighPhase, miePhase, 1.0, vec3(1.0), result, lost);
 
 }
 
@@ -436,6 +436,94 @@ float AtmosphereWeight(vec3 worldPosition) {
 
 }
 
+// Share of a clear sky's light that still arrives in a total eclipse (a few lux against about 15 klux): the horizon band, lit beyond the shadow and reddened on its way in.
+const vec3 EclipseHorizonGlow = vec3(0.0012, 0.0008, 0.00045);
+
+// Skylight left at a point under an eclipse: the sky overhead follows the shadow there, while in air the horizon still glows.
+vec3 EclipseSkylight(vec3 worldPosition) {
+
+    vec3 local = EclipseLight(worldPosition);
+
+    return local + (1.0 - local) * EclipseHorizonGlow * AtmosphereWeight(worldPosition);
+
+}
+
+// Whether a body sits close enough to the sun, seen from the camera, that its shadow could cross a long view ray.
+bool EclipseNear() {
+
+    float sunRadius = acos(frame.sunDirection.w);
+
+    for (int i = 0; i < 2; i++) {
+
+        vec4 occluder = frame.occluders[i];
+        float distance = length(occluder.xyz);
+
+        if (occluder.w <= 0.0 || distance < occluder.w * 1.02) {
+
+            continue;
+
+        }
+
+        // A ray a thousand kilometres long sees the body shift by about that much over its distance.
+        float margin = 1.0e6 / distance;
+
+        if (acos(clamp(dot(occluder.xyz / distance, frame.sunDirection.xyz), -1.0, 1.0)) < asin(occluder.w / distance) + sunRadius + margin) {
+
+            return true;
+
+        }
+
+    }
+
+    return false;
+
+}
+
+// Per channel, the share of the light scattered towards the camera along a view ray that came from sunlit air; origin is planet-relative.
+vec3 EclipseSky(vec3 origin, vec3 direction) {
+
+    const int Steps = 12;
+
+    float near;
+    float far;
+    float span = RaySphere(origin, direction, TopRadius(), near, far) ? far : 0.0;
+
+    if (HitsGround(origin, direction) && RaySphere(origin, direction, BottomRadius(), near, far) && near > 0.0) {
+
+        span = near;
+
+    }
+
+    span = min(span, 1.0e6);
+
+    vec3 depth = vec3(0.0);
+    vec3 total = vec3(0.0);
+    vec3 lit = vec3(0.0);
+    float previous = 0.0;
+
+    for (int i = 0; i < Steps; i++) {
+
+        // Steps crowd towards the camera, where the air is densest along most rays.
+        float t = span * pow((float(i) + 1.0) / float(Steps), 2.0);
+        float dt = t - previous;
+        vec3 p = origin + direction * (previous + dt * 0.5);
+        Medium m = SampleMedium(length(p) - BottomRadius());
+        vec3 weight = m.scattering * exp(-depth) * dt;
+
+        total += weight;
+        lit += weight * EclipseLight(p + frame.atmosphereCenter.xyz);
+        depth += m.extinction * dt;
+        previous = t;
+
+    }
+
+    vec3 share = lit / max(total, vec3(1e-20));
+
+    // Light scattered more than once still reaches the shadowed sky overhead, faintly.
+    return share + (1.0 - share) * EclipseHorizonGlow * 0.1;
+
+}
+
 // Light scattered in front of a surface from high above, marched per pixel with steps crowding towards the dense air below.
 ScatteringResult MarchToSurface(vec3 origin, vec3 direction, float distance) {
 
@@ -477,9 +565,9 @@ ScatteringResult MarchToSurface(vec3 origin, vec3 direction, float distance) {
         float dt = (t - previous) * span;
 
         vec3 p = origin + direction * (start + (previous + t) * 0.5 * span);
-        float eclipse = dot(EclipseLight(p + frame.atmosphereCenter.xyz), vec3(1.0 / 3.0));
+        vec3 eclipse = EclipseLight(p + frame.atmosphereCenter.xyz);
 
-        ShadowedScatterStep(p, dt, frame.sunDirection.xyz, rayleighPhase, miePhase, eclipse, result, lost);
+        ShadowedScatterStep(p, dt, frame.sunDirection.xyz, rayleighPhase, miePhase, dot(eclipse, vec3(1.0 / 3.0)), eclipse + (1.0 - eclipse) * EclipseHorizonGlow, result, lost);
 
         previous = t;
 
