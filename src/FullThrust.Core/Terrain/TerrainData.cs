@@ -22,6 +22,14 @@ public sealed class TerrainData {
     // Share of habitable land inside settled regions.
     public double Settled { get; set; } = 0.35;
 
+    // Street grids inside places, in metres: the side of a block and the lit width of a street.
+    public double BlockLength { get; set; } = 140;
+
+    public double StreetWidth { get; set; } = 14;
+
+    // Mean spacing in metres of the lit farmsteads scattered through settled country.
+    public double FarmSpacing { get; set; } = 1500;
+
     // Large-scale shape: features per unit radius for continents or maria.
     public double ContinentFrequency { get; set; } = 1.6;
 

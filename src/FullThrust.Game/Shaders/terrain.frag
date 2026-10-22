@@ -119,12 +119,27 @@ vec4 CellRandom(vec3 cell, uint seed) {
 // Mean light of Places per unit of chance: the integral of one place's profile over the rank-size law.
 const float PlacesMean = 0.010;
 
-// Places on a jittered lattice, q in cells on a sphere: sizes follow a rank-size law, so most are villages and only a few grow large.
-float Places(vec3 q, float footprint, float chance, float warp, float ragged, uint seed) {
+// Roads out of each place: their lit width in metres, brightness against a village core, and how many leave it.
+const float RoadWidth = 30.0;
+const float RoadLight = 0.2;
+const int Roads = 3;
+
+// The place lighting a pixel most: its lattice random values, the pixel's offset from it in the tangent plane in cells, and its glow there.
+struct Nearest {
+
+    vec4 random;
+    vec2 offset;
+    float glow;
+
+};
+
+// Places on a jittered lattice, q in cells on a sphere spanned locally by east and north: sizes follow a rank-size law, so most are villages and only a few grow large.
+float Places(vec3 q, vec3 east, vec3 north, float footprint, float roadWidth, float chance, float warp, float ragged, uint seed, inout Nearest nearest) {
 
     vec3 base = floor(q - 0.5);
     float sphere = length(q);
     float light = 0.0;
+    float width = max(roadWidth, footprint);
 
     for (int i = 0; i < 8; i++) {
 
@@ -150,7 +165,37 @@ float Places(vec3 q, float footprint, float chance, float warp, float ragged, ui
         // A dense core inside a dimmer sprawl whose edge frays into fingers and gaps.
         float profile = 0.55 * exp(-8.0 * t * t) + 0.45 * (1.0 - smoothstep(0.35, 0.75, t + (ragged - 0.5) * 0.9));
 
-        light += (0.3 + 0.7 * size) * radius * radius / (spread * spread) * profile * 2.0;
+        float glow = (0.3 + 0.7 * size) * radius * radius / (spread * spread) * profile * 2.0;
+
+        // Roads leave along hashed headings, lit for a stretch towards the neighbours; they end within half a cell, so the search still finds them.
+        vec3 offset = q - centre;
+        vec2 level = vec2(dot(offset, east), dot(offset, north));
+        float roads = 0.0;
+
+        for (int k = 0; k < Roads; k++) {
+
+            // Each road gets its own heading, length and traffic, so no place wears a regular star.
+            float heading = 6.2831853 * fract(r.x * 7.31 + float(k) * (0.27 + 0.2 * r.z));
+            float end = 0.2 + 0.25 * fract(r.y * 5.3 + float(k) * 0.618);
+            float traffic = 0.5 + fract(r.z * 9.1 + float(k) * 0.41);
+            vec2 along = vec2(cos(heading), sin(heading));
+            float reach = dot(level, along);
+            float across = level.x * along.y - level.y * along.x;
+
+            roads += traffic * exp(-across * across / (width * width)) * smoothstep(radius * 0.4, radius, reach) * (1.0 - smoothstep(end * 0.6, end, reach));
+
+        }
+
+        glow += roads * RoadLight * (0.4 + 0.6 * sqrt(size)) * roadWidth / width;
+        light += glow;
+
+        if (glow > nearest.glow) {
+
+            nearest.random = r;
+            nearest.offset = level;
+            nearest.glow = glow;
+
+        }
 
     }
 
@@ -159,8 +204,75 @@ float Places(vec3 q, float footprint, float chance, float warp, float ragged, ui
 
 }
 
+// Street grid of the place lighting this pixel most, turned to its own heading: lit streets between blocks that are dark or bright, averaging one.
+float Streets(Nearest place, float metresPerCell, vec4 streets, float metresPerPixel, uint seed) {
+
+    float block = streets.y * (0.75 + 0.5 * place.random.z);
+    float fade = smoothstep(block * 0.2, block * 0.6, metresPerPixel);
+
+    if (fade >= 1.0 || place.glow <= 0.0) {
+
+        return 1.0;
+
+    }
+
+    float angle = 1.5707963 * place.random.y;
+    vec2 local = mat2(cos(angle), sin(angle), -sin(angle), cos(angle)) * place.offset * metresPerCell / block;
+    float edge = min(0.5 - abs(fract(local.x) - 0.5), 0.5 - abs(fract(local.y) - 0.5)) * block;
+    float soft = max(metresPerPixel, 1.0) * 0.5;
+    float street = 1.0 - smoothstep(streets.z * 0.5 - soft, streets.z * 0.5 + soft, edge);
+
+    // Parks and yards stay dark, busy blocks glow; the streets take the rest so the whole still averages one.
+    float lot = 0.6 * CellRandom(vec3(floor(local), 0.0), seed + 104729u).x;
+    float share = 2.0 * streets.z / block;
+    float lamps = (1.0 - 0.3 * (1.0 - share)) / share;
+
+    return mix(mix(lot, lamps, street), 1.0, fade);
+
+}
+
+// Mean light of Farms per unit of chance.
+const float FarmsMean = 2.5e-4;
+
+// Lone farmsteads on a lattice of their own, q in cells: one yard light each, spread over the pixel and averaged out from afar.
+float Farms(vec3 q, float footprint, float chance, uint seed) {
+
+    if (footprint > 0.37) {
+
+        return chance * FarmsMean;
+
+    }
+
+    vec3 base = floor(q - 0.5);
+    float sphere = length(q);
+    float light = 0.0;
+
+    for (int i = 0; i < 8; i++) {
+
+        vec3 cell = base + vec3(i & 1, (i >> 1) & 1, i >> 2);
+        vec4 r = CellRandom(cell, seed);
+        vec3 centre = normalize(cell + r.xyz) * sphere;
+
+        if (r.w >= chance || floor(centre) != cell) {
+
+            continue;
+
+        }
+
+        float radius = 0.025;
+        float spread = min(sqrt(radius * radius + footprint * footprint), 0.4);
+        float t = distance(q, centre) / spread;
+
+        light += radius * radius / (spread * spread) * exp(-4.0 * t * t) * (0.25 + 0.5 * r.w / chance);
+
+    }
+
+    return mix(light, chance * FarmsMean, smoothstep(0.2, 0.37, footprint));
+
+}
+
 // Night-side city lights in cd/m2: settled regions from untiled noise, villages and towns on one lattice, cities on a coarser tilted one.
-vec3 CityLights(vec3 direction, vec3 detail, float height, float metresPerPixel, float radiansPerPixel, vec4 settlements, float luminance) {
+vec3 CityLights(vec3 direction, vec3 detail, float height, float metresPerPixel, float radiansPerPixel, vec4 settlements, vec4 streets, float luminance) {
 
     // Towns favour wet lowlands and coasts, and shun ice, bare rock and the high deserts.
     float habitable = clamp(vWeights0.x + 0.3 * vWeights0.y + 0.8 * vWeights0.w - vWeights1.y - 0.5 * vWeights1.x, 0.0, 1.0);
@@ -206,14 +318,23 @@ vec3 CityLights(vec3 direction, vec3 detail, float height, float metresPerPixel,
     // Places crowd into corridors a few hundred kilometres long, leaving thin country between them.
     float crowding = settled * (0.3 + 1.4 * ValueNoise(Tilt * direction * 24.0 + 5.0, DetailPeriod));
 
-    float places = Places(towns, radiansPerPixel * settlements.x, min(0.7 * crowding, 1.0), townWarp, ragged, seed) + 2.5 * Places(cities, radiansPerPixel * settlements.y, 0.5 * crowding, cityWarp, ragged, seed + 7919u);
+    // The tangent plane here; the city lattice sees it through the same tilt as its cells.
+    vec3 east = normalize(cross(vec3(0.0, 1.0, 0.0), direction));
+    vec3 north = cross(direction, east);
 
-    // Street grain averages to its mean once a pixel covers a few blocks, so cities do not sparkle from orbit.
-    float grain = texture(cloudNoise, detail * (1.0 / 2048.0) + vec3(0.71, 0.37, 0.19)).a;
-    float streets = mix(smoothstep(0.35, 0.75, grain) * 2.2, 1.0, smoothstep(60.0, 400.0, metresPerPixel));
+    Nearest town = Nearest(vec4(0.0), vec2(0.0), 0.0);
+    Nearest city = Nearest(vec4(0.0), vec2(0.0), 0.0);
+
+    float townLight = Places(towns, east, north, radiansPerPixel * settlements.x, RoadWidth * settlements.x / streets.x, min(0.7 * crowding, 1.0), townWarp, ragged, seed, town);
+    float cityLight = 2.5 * Places(cities, Tilt * east, Tilt * north, radiansPerPixel * settlements.y, RoadWidth * settlements.y / streets.x, 0.5 * crowding, cityWarp, ragged, seed + 7919u, city);
+
+    city.glow *= 2.5;
+
+    float grid = city.glow > town.glow ? Streets(city, streets.x / settlements.y, streets, metresPerPixel, seed) : Streets(town, streets.x / settlements.x, streets, metresPerPixel, seed);
     float districts = mix(0.3 + 1.4 * texture(cloudNoise, detail * (1.0 / 16384.0) + vec3(0.23, 0.91, 0.57)).b, 1.0, smoothstep(300.0, 2500.0, metresPerPixel));
+    float farms = Farms(direction * streets.w, radiansPerPixel * streets.w, min(0.6 * crowding, 1.0), seed + 15485863u);
 
-    float density = places * streets * districts;
+    float density = (townLight + cityLight) * grid * districts + farms;
     vec3 sodium = vec3(1.0, 0.62, 0.3);
 
     return mix(sodium, vec3(1.0, 0.9, 0.75), smoothstep(0.4, 1.2, density)) * density * luminance;
@@ -420,7 +541,7 @@ void main() {
 
         if (night > 0.0) {
 
-            s.emissive += CityLights(bodyUp, vDetail, vHeight, metresPerPixel, radiansPerPixel, body.settlements, body.shallowWater.w) * night;
+            s.emissive += CityLights(bodyUp, vDetail, vHeight, metresPerPixel, radiansPerPixel, body.settlements, body.streets, body.shallowWater.w) * night;
 
         }
 

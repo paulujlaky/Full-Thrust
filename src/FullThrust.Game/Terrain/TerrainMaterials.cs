@@ -36,6 +36,9 @@ public struct TerrainBodyUniforms {
     // x, y: town and city lattice cells per unit of body direction; z: settled share; w: seed.
     public float4 Settlements;
 
+    // x: body radius; y, z: street block length and street width in metres; w: farm lattice cells per unit of body direction.
+    public float4 Streets;
+
     // rgb: palette colour; w: 1 / mean luminance of the channel's texture.
     public ChannelVectors Palette;
 
@@ -165,6 +168,7 @@ public sealed class TerrainMaterials : IDisposable {
             ShallowWater = new float4(palette.ShallowWater, (float)data.CityLights),
 
             Settlements = new float4((float)(radius / data.TownSpacing), (float)(radius / data.CitySpacing), (float)data.Settled, data.Seed & 0xFFFF),
+            Streets = new float4((float)radius, (float)data.BlockLength, (float)data.StreetWidth, (float)(radius / data.FarmSpacing)),
 
         };
 

@@ -9,6 +9,7 @@ struct TerrainBody {
     vec4 tileScale0;
     vec4 tileScale1;
     vec4 settlements;
+    vec4 streets;
     vec4 palette[8];
     vec4 inverseMean[8];
 
