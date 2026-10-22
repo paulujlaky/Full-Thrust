@@ -22,6 +22,24 @@ vec3 Aces(vec3 x) {
 
 }
 
+// Per channel, a bright orange glow saturates every channel and turns white; past white this leans towards scaling by the brightest channel, which keeps the hue.
+vec3 HueKeepingAces(vec3 color) {
+
+    float peak = max(color.r, max(color.g, color.b));
+    vec3 channels = Aces(color);
+
+    if (peak <= 1.0) {
+
+        return channels;
+
+    }
+
+    vec3 hue = color * (Aces(vec3(peak)).r / peak);
+
+    return mix(channels, hue, 0.7 * smoothstep(1.0, 4.0, peak));
+
+}
+
 // Minimal AgX (Troy Sobotka) with a sigmoid fit; output is linear sRGB.
 vec3 AgX(vec3 color) {
 
@@ -96,7 +114,7 @@ void main() {
 
     switch (pc.tonemapper) {
 
-        case 0: mapped = Aces(color); break;
+        case 0: mapped = HueKeepingAces(color); break;
         case 1: mapped = AgX(color); break;
         case 2: mapped = PbrNeutral(color); break;
         case 3: mapped = Reinhard(color, pc.whitePoint); break;

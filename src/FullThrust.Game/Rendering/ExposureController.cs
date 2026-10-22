@@ -19,6 +19,13 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
     // Share of the arithmetic mean luminance that the exposure must keep below white.
     private const double MeanShare = 0.15;
 
+    // The brightest tenth of the frame's blocks may sit at most this far above the metered level, so a glow that fills the view keeps its colour.
+    private const double HighlightPercentile = 0.9;
+    private const double HighlightRange = 10;
+
+    // Pixels each metering sample stands for along each axis.
+    private const int SampleSpacing = 4;
+
     private readonly DeviceEx _device;
     private readonly HdrTarget _target;
     private readonly SceneLighting _lighting;
@@ -27,8 +34,12 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
     private readonly MappedMemory[] _mapped = new MappedMemory[Renderer.FramesInFlight];
     private readonly VkDescriptorSet[] _sets = new VkDescriptorSet[Renderer.FramesInFlight];
 
-    // How many groups each frame in flight wrote, to read its sums when they come back.
+    // How many groups each frame in flight wrote, and the image they metered, to read its sums when they come back.
     private readonly int[] _groups = new int[Renderer.FramesInFlight];
+    private readonly VkExtent2D[] _extents = new VkExtent2D[Renderer.FramesInFlight];
+
+    // Mean luminance of each block, sorted to find the highlight percentile.
+    private readonly float[] _blocks = new float[MaxGroups];
 
     private readonly VkSampler _sampler;
     private readonly VkDescriptorSetLayout _setLayout;
@@ -141,6 +152,7 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
         var groupsY = ComputeKernel.Groups(frame.Extent.Height, GroupPixels);
 
         _groups[index] = Math.Min(groupsX * groupsY, MaxGroups);
+        _extents[index] = frame.Extent;
 
         if (groupsX * groupsY > MaxGroups) {
 
@@ -168,26 +180,44 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
         }
 
         var sums = MemoryMarshal.Cast<byte, float4>(_mapped[index].AsSpan<byte>())[.._groups[index]];
+        var extent = _extents[index];
+        var groupsX = ComputeKernel.Groups(extent.Width, GroupPixels);
         var total = 0.0;
         var weight = 0.0;
         var linear = 0.0;
+        var blocks = 0;
 
-        foreach (var sum in sums) {
+        for (var i = 0; i < sums.Length; i++) {
+
+            var sum = sums[i];
+            var samples = Samples(extent.Width, i % groupsX) * Samples(extent.Height, i / groupsX);
 
             total += sum.X;
             weight += sum.Y;
             linear += sum.Z;
 
+            if (samples > 0) {
+
+                _blocks[blocks++] = sum.W / samples;
+
+            }
+
         }
 
-        if (weight <= 0) {
+        if (weight <= 0 || blocks == 0) {
 
             return;
 
         }
 
-        // The log average suits ordinary scenes; a small bright source in the dark, like a night launch, pulls the arithmetic mean up instead.
-        var luminance = Math.Max(Math.Pow(2, total / weight), MeanShare * linear / weight);
+        var sorted = _blocks.AsSpan(0, blocks);
+
+        sorted.Sort();
+
+        var highlight = sorted[Math.Min((int)(blocks * HighlightPercentile), blocks - 1)];
+
+        // The log average suits ordinary scenes; a small bright source in the dark, like a night launch, pulls the arithmetic mean up, and a glow filling much of the view the highlights.
+        var luminance = Math.Max(Math.Max(Math.Pow(2, total / weight), MeanShare * linear / weight), highlight / HighlightRange);
 
         MeasuredLuminance = (float)luminance;
 
@@ -201,6 +231,15 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
         var blend = 1 - Math.Exp(-Math.Min(seconds, 0.25) / Math.Max(AdaptationTime, 0.01));
 
         _lighting.Ev100 = (float)(_lighting.Ev100 + (target - _lighting.Ev100) * blend);
+
+    }
+
+    // Metering samples a group takes along one axis: one every SampleSpacing pixels from the second, cut short at the image edge.
+    private static int Samples(int size, int group) {
+
+        var start = group * GroupPixels + 1;
+
+        return Math.Clamp((size - start + SampleSpacing - 1) / SampleSpacing, 0, GroupPixels / SampleSpacing);
 
     }
 
