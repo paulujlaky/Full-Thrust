@@ -1,0 +1,1 @@
+Cloud coverage uses the alpha channel of the NASA Blue Marble global cloud composite. [NASA imagery](https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/) · [RGBA conversion and attribution](https://github.com/MaxwellLee/physics-lab/blob/71807f8e5f3f8cfd29630ea46e4cf00d15693bc5/assets/textures/SOURCES.md)

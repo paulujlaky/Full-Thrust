@@ -39,8 +39,8 @@ public sealed class TonemapPass : IRenderPass, IResizeListener {
 
         _sampler = device.CreateSampler(new VkSamplerCreateInfo {
 
-            MagFilter = VkFilter.Nearest,
-            MinFilter = VkFilter.Nearest,
+            MagFilter = VkFilter.Linear,
+            MinFilter = VkFilter.Linear,
             MipmapMode = VkSamplerMipmapMode.Nearest,
             AddressModeU = VkSamplerAddressMode.ClampToEdge,
             AddressModeV = VkSamplerAddressMode.ClampToEdge,

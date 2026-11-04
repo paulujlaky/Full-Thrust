@@ -61,7 +61,12 @@ public static class CraftAssembly {
 
             if (definition.Model is { } model) {
 
-                world.Add(part, new ModelInstance { Model = model.Index });
+                world.Add(part, new ModelInstance {
+
+                    Model = model.Index,
+                    Shroud = spec.Shroud?.Index,
+
+                });
 
             } else {
 

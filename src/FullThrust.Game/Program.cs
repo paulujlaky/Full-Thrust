@@ -35,8 +35,17 @@ if (Value("--window")?.Split('x') is [var width, var height]) {
 options.SmokeWarpRate = Number("--warp", 1);
 options.SmokeThrottle = Number("--throttle", 0);
 options.CaptureEvery = (int)Number("--capture-every", 0);
+options.CaptureLast = args.Contains("--capture-last");
+var captureFps = Number("--capture-fps", 0);
+
+if (captureFps > 0 && double.IsFinite(captureFps)) {
+
+    options.CaptureFrameSeconds = 1 / captureFps;
+
+}
 options.Focus = (int)Number("--focus", 0);
 options.CameraDistance = Number("--camera-distance", 0);
+options.CameraPart = Value("--camera-part");
 options.CaptureDirectory = Value("--capture-dir") ?? options.CaptureDirectory;
 options.CameraPitch = Number("--camera-pitch", double.NaN);
 options.CameraYaw = Number("--camera-yaw", double.NaN);

@@ -223,7 +223,11 @@ public sealed class TerrainRenderer : IRenderPass, IFrameUploader, IDepthCaster 
 
         foreach (var body in _bodies) {
 
-            body.Quadtree.Update(_system.WorldToBodyFixed(body.Body.Index, camera, universalTime), body);
+            var local = _system.WorldToBodyFixed(body.Body.Index, camera, universalTime);
+            var height = local.Length() / body.Body.Radius - 1;
+            var orbital = Math.Clamp((height - 0.02) / 0.28, 0, 1);
+            var detail = double.Lerp(1, Math.Clamp(body.Data.OrbitalDetailScale, 1, 5), orbital);
+            body.Quadtree.Update(local, body, detail);
 
         }
 

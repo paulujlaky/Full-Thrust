@@ -5,6 +5,7 @@ using FullThrust.Core.Ecs;
 using FullThrust.Core.Orbits;
 using FullThrust.Core.Rendering;
 using FullThrust.Core.Space;
+using FullThrust.Core.Terrain;
 
 namespace FullThrust.Game.Scene;
 
@@ -120,6 +121,85 @@ public sealed class DemoScene {
         world.Add(LaunchPad, new SurfaceAnchor { Body = planet.Index, Position = site.Direction * (planet.Radius + site.Height + LaunchPadLift), Rotation = SpaceMath.FromTo(double3.UnitY, site.Direction) });
         world.Add(LaunchPad, new Transform(System.Position(planet.Index), doubleQuat.Identity));
         world.Add(LaunchPad, new ModelInstance { Model = model.Index });
+
+        foreach (var grove in planet.TerrainData!.Sites[0].Groves) {
+
+            PlantGroves(world, planet, terrain, site, grove);
+
+        }
+
+    }
+
+    private void PlantGroves(World world, CelestialBody body, ITerrain terrain, in TerrainSite site, GroveData grove) {
+
+        if (grove.InnerRadius < 0 || grove.OuterRadius <= grove.InnerRadius || grove.FootprintRadius <= 0) {
+
+            throw new InvalidDataException($"Invalid grove footprint at {site.Name}.");
+
+        }
+
+        var model = Models.Register(grove.Model);
+        var random = new Random(grove.Seed);
+        var habitats = new GradientNoise(body.TerrainData!.Seed);
+        var siteRotation = SpaceMath.FromTo(double3.UnitY, site.Direction);
+        var planted = 0;
+
+        for (var i = 0; i < grove.Count * 3 && planted < grove.Count; i++) {
+
+            var angle = random.NextDouble() * Math.Tau;
+            var distance = Math.Sqrt(double.Lerp(grove.InnerRadius * grove.InnerRadius, grove.OuterRadius * grove.OuterRadius, random.NextDouble()));
+            var localX = Math.Cos(angle) * distance;
+            var localZ = Math.Sin(angle) * distance;
+            var habitat = habitats.Noise(localX / 190, 7.3, localZ / 190) + 0.45 * habitats.Noise(localX / 72, 1.9, localZ / 72);
+
+            if (habitat < 0.06 && random.NextDouble() > 0.13) {
+
+                continue;
+
+            }
+
+            var offset = siteRotation * new double3(localX, 0, localZ);
+            var direction = double3.Normalize(site.Direction * body.Radius + offset);
+            var center = direction * body.Radius;
+            var height = terrain.Height(direction);
+            var rotation = SpaceMath.FromTo(double3.UnitY, direction) * doubleQuat.CreateFromAxisAngle(double3.UnitY, random.NextDouble() * Math.Tau);
+            var x = rotation * double3.UnitX;
+            var z = rotation * double3.UnitZ;
+            var radius = grove.FootprintRadius;
+            var east = terrain.Height(double3.Normalize(center + x * radius));
+            var west = terrain.Height(double3.Normalize(center - x * radius));
+            var north = terrain.Height(double3.Normalize(center + z * radius));
+            var south = terrain.Height(double3.Normalize(center - z * radius));
+
+            // A shared stand fits a local tangent plane; leave broken slopes and the shore clear.
+            var lowest = Math.Min(height, Math.Min(Math.Min(east, west), Math.Min(north, south)));
+            var curvature = Math.Max(Math.Abs((east + west) * 0.5 - height), Math.Abs((north + south) * 0.5 - height));
+
+            if ((terrain.HasOcean && lowest < 0.7) || curvature > 0.6) {
+
+                continue;
+
+            }
+
+            var normal = double3.Normalize(direction - (x * (east - west) + z * (north - south)) / (2 * radius));
+            var stand = world.Create();
+            world.Add(stand, new SurfaceAnchor {
+
+                Body = body.Index,
+                Position = center + direction * height,
+                Rotation = SpaceMath.FromTo(direction, normal) * rotation,
+
+            });
+            world.Add(stand, new Transform(System.Position(body.Index), doubleQuat.Identity));
+            world.Add(stand, new ModelInstance {
+
+                Model = model.Index,
+                DetailRange = grove.FootprintRadius * 1100,
+
+            });
+            planted++;
+
+        }
 
     }
 

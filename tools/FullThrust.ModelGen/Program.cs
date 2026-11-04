@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FullThrust.Assets;
+using FullThrust.Core.Parts;
 using FullThrust.ModelGen;
 
 // dotnet run --project tools/FullThrust.ModelGen -- [build [recipes.json]] | inspect <model.glb>
@@ -18,20 +19,25 @@ var recipesPath = args.Length >= 2 && args[0] == "build" ? args[1] : Path.Combin
 
 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 var recipes = JsonSerializer.Deserialize<RecipeFile>(File.ReadAllText(recipesPath), options) ?? throw new InvalidDataException("Recipe file is empty.");
-var parts = LoadPartDimensions(Path.Combine(repository, "data", "parts", "parts.json"));
+var parts = PartCatalogLoader.LoadFile(Path.Combine(repository, "data", "parts", "parts.json"));
 
 foreach (var recipe in recipes.Models) {
 
     if (recipe.Part is { } id) {
 
-        if (!parts.TryGetValue(id, out var dimensions)) {
+        var part = parts[id];
+        recipe.Length = recipe.Length > 0 ? recipe.Length : part.Length;
+        recipe.Diameter = recipe.Diameter > 0 ? recipe.Diameter : part.Radius * 2;
 
-            throw new InvalidDataException($"{recipe.Output}: unknown part '{id}'.");
+        if (recipe.EngineDiameter <= 0 && part.Module<EngineDefinition>()?.Cluster is { } cluster) {
+
+            recipe.EngineDiameter = cluster.Diameter;
+            recipe.EngineLength = cluster.Length;
+            recipe.RingRadius = cluster.RingRadius;
+            recipe.RingEngines = cluster.RingCount;
+            recipe.CenterEngine = cluster.Center;
 
         }
-
-        recipe.Length = recipe.Length > 0 ? recipe.Length : dimensions.Length;
-        recipe.Diameter = recipe.Diameter > 0 ? recipe.Diameter : dimensions.Diameter;
 
     }
 
@@ -63,22 +69,6 @@ static void Inspect(string path) {
         Console.WriteLine($"  [{i}] {mesh.Name} {single.BoundsMin} .. {single.BoundsMax} {materials}");
 
     }
-
-}
-
-static Dictionary<string, (double Length, double Diameter)> LoadPartDimensions(string path) {
-
-    using var document = JsonDocument.Parse(File.ReadAllText(path), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-
-    var result = new Dictionary<string, (double, double)>(StringComparer.OrdinalIgnoreCase);
-
-    foreach (var part in document.RootElement.GetProperty("parts"u8).EnumerateArray()) {
-
-        result[part.GetProperty("id"u8).GetString()!] = (part.GetProperty("length"u8).GetDouble(), part.GetProperty("diameter"u8).GetDouble());
-
-    }
-
-    return result;
 
 }
 

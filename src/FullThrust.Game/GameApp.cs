@@ -53,6 +53,7 @@ public sealed class GameOptions {
     public int Focus;
 
     public double CameraDistance;
+    public string? CameraPart;
 
     public double CameraPitch = double.NaN;
 
@@ -88,6 +89,8 @@ public sealed class GameOptions {
 
     // Non-zero runs a scripted smoke test: warm up, measure this many frames, log a summary and exit.
     public int SmokeFrames;
+    public double CaptureFrameSeconds;
+    public bool CaptureLast;
 
     public double SmokeWarpRate = 1;
 
@@ -222,6 +225,12 @@ public sealed class GameApp : IDisposable {
         Glfw.WindowHint(GlfwWindowHint.ClientApi, Glfw.Constants.GLFW_NO_API);
         Glfw.WindowHint(GlfwWindowHint.Resizable, Glfw.Constants.GLFW_TRUE);
 
+        if (options.SmokeFrames > 0) {
+
+            Glfw.WindowHint(GlfwWindowHint.Decorated, Glfw.Constants.GLFW_FALSE);
+
+        }
+
         _window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Full Thrust", Size = options.WindowSize });
         _input = new InputState(_window);
 
@@ -303,6 +312,12 @@ public sealed class GameApp : IDisposable {
 
         _camera.Focus(_options.Focus);
 
+        if (_options.CameraPart is { } part) {
+
+            _camera.InspectPart(_world, part);
+
+        }
+
         if (_options.CameraDistance > 0) {
 
             _camera.Rig.Distance = _options.CameraDistance;
@@ -339,17 +354,17 @@ public sealed class GameApp : IDisposable {
 
         _terrain.ShowLevels = _options.ShowTerrainLevels;
         _renderer.AddPass(_terrain);
-        _meshPass = new MeshPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.DepthRenderPass, _renderer.Frames.SetLayout, shaders, _world, _origin, _modelLibrary);
+        _meshPass = new MeshPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.DepthRenderPass, _renderer.Frames.SetLayout, shaders, _world, _origin, _modelLibrary, _camera.Camera);
 
         _renderer.AddPass(_meshPass);
         _background = new BackgroundPass(_vulkan.Device, _renderer.SceneRenderPass, _renderer.Frames.SetLayout, shaders);
         _renderer.AddPass(_background);
 
-        _volumetrics = new VolumetricRenderer(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames, _origin);
+        _volumetrics = new VolumetricRenderer(_vulkan.Device, shaders, _renderer.Hdr, _renderer.Frames, _origin, _uploader);
         _renderer.AddPass(_volumetrics);
         _renderer.AddPass(_volumetrics.CompositePass);
 
-        _plumes = new PlumeSource(_world, _origin, _volumetrics.Lights, _parts, Path.Combine(AppContext.BaseDirectory, "data", "effects", "plumes.json"));
+        _plumes = new PlumeSource(_world, _origin, _volumetrics.Lights, _parts, Path.Combine(AppContext.BaseDirectory, "data", "effects", "plumes.json"), _bodies);
         _volumetrics.AddSource(_plumes);
 
         _trails = new TrailSource(_world, _bodies, _origin, _plumes);
@@ -399,6 +414,7 @@ public sealed class GameApp : IDisposable {
 
         _warp.Stop();
         _flight.Modes.DestroyAll(_world);
+        _plumes?.ClearSteam();
 
         var craft = _scene.Spawn(_world, scenario, rocket, _clock.UniversalTime);
 
@@ -446,11 +462,11 @@ public sealed class GameApp : IDisposable {
 
             }
 
-            if (smoke && warmupFrames >= 0 && _options.CaptureEvery > 0) {
+            if (smoke && warmupFrames >= 0 && (_options.CaptureEvery > 0 || _options.CaptureLast)) {
 
                 var measured = _stats.FrameCount - warmupFrames;
 
-                if (measured % _options.CaptureEvery == 0 || measured == _options.SmokeFrames - 1) {
+                if (measured == _options.SmokeFrames - 1 || (!_options.CaptureLast && measured % _options.CaptureEvery == 0)) {
 
                     _renderer.Capture.Request(Path.Combine(_options.CaptureDirectory, $"{_scene.Rocket.Id}-{_options.Scenario}-{measured:D6}.png"));
                     capturing = true;
@@ -461,7 +477,7 @@ public sealed class GameApp : IDisposable {
 
             _stats.BeginFrame();
 
-            Frame(frameSeconds);
+            Frame(smoke && warmupFrames >= 0 && _options.CaptureFrameSeconds > 0 ? _options.CaptureFrameSeconds : frameSeconds);
 
             _stats.EndFrame(frameSeconds);
 
@@ -596,7 +612,7 @@ public sealed class GameApp : IDisposable {
     // With captures enabled, also grab frames shortly after each stage so separations are on record.
     private void CaptureAfterStaging() {
 
-        if (_options.CaptureEvery <= 0 || _stageCaptures >= StageCaptureDelays.Length || double.IsNegativeInfinity(_lastStageTime)) {
+        if (_options.CaptureLast || _options.CaptureEvery <= 0 || _stageCaptures >= StageCaptureDelays.Length || double.IsNegativeInfinity(_lastStageTime)) {
 
             return;
 
@@ -666,8 +682,13 @@ public sealed class GameApp : IDisposable {
         _origin.Update(_site is null ? _camera.TargetPosition : _camera.Camera.Position);
 
         _lines.Clear();
-        _orbitDraw.Draw(_clock.UniversalTime);
-        _craftDraw.Draw();
+
+        if (_debugUi.Visible) {
+
+            _orbitDraw.Draw(_clock.UniversalTime);
+            _craftDraw.Draw();
+
+        }
 
         var t1 = Stopwatch.GetTimestamp();
         var a1 = GC.GetAllocatedBytesForCurrentThread();
@@ -686,7 +707,9 @@ public sealed class GameApp : IDisposable {
         var aspect = size.Y > 0 ? (float)size.X / size.Y : 1.0f;
 
         _lighting.Update(_bodies, _clock.UniversalTime, _camera.Camera.Position, _camera.Camera.Forward, _camera.Camera.Up);
+        CollectSiteLights();
         _renderer.Seconds = _clock.UniversalTime;
+        _plumes!.UniversalTime = _clock.UniversalTime;
         _terrain?.Prepare(_camera.Camera.Position, _clock.UniversalTime);
         _atmosphere?.Update(_camera.Camera.Position, _clock.UniversalTime);
         _clouds?.Update(_camera.Camera.Position, _clock.UniversalTime);
@@ -708,6 +731,41 @@ public sealed class GameApp : IDisposable {
         }
 
         _input.EndFrame();
+
+    }
+
+    private void CollectSiteLights() {
+
+        _lighting.SiteLights.Clear();
+        if (!_world.IsAlive(_scene.LaunchPad)) {
+
+            return;
+
+        }
+
+        ref readonly var pad = ref _world.Get<Transform>(_scene.LaunchPad);
+        if ((_camera.Camera.Position - pad.Position).LengthSquared() > 2500.0 * 2500.0) {
+
+            return;
+
+        }
+
+        var up = SpaceMath.ToFloat(pad.Rotation * double3.UnitY);
+        var power = Math.Clamp((0.06f - float3.Dot(up, _lighting.SunDirection)) / 0.14f, 0, 1);
+
+        if (power <= 0) {
+
+            return;
+
+        }
+
+        foreach (var lamp in LaunchComplex.Floodlights) {
+
+            var position = pad.Position + pad.Rotation * SpaceMath.ToDouble(lamp.Position);
+            var direction = SpaceMath.ToFloat(pad.Rotation * SpaceMath.ToDouble(float3.Normalize(lamp.Aim - lamp.Position)));
+            _lighting.SiteLights.Add(_origin.ToLocal(position), 0.45f, new float3(1.0f, 0.87f, 0.69f) * (power * lamp.Candela), new float4(direction, 0.81f));
+
+        }
 
     }
 

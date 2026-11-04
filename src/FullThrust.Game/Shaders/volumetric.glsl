@@ -5,6 +5,8 @@ const int VolumePlume = 2;
 const int VolumeCloudLayer = 3;
 const int VolumeTrail = 4;
 const int VolumeShock = 5;
+const int VolumeGroundOutflow = 6;
+const int VolumeCirrus = 7;
 
 // Metres per period of the noise in exhaust trails; matches TrailSource.NoiseScale.
 const float TrailNoiseScale = 40.0;
@@ -88,13 +90,108 @@ bool ShellSegment(VolumePrimitive v, vec3 origin, vec3 direction, out float ente
 
 }
 
-// Bounding segment of a primitive along a ray; false when the ray misses it.
+bool PlumeSegment(VolumePrimitive v, vec3 origin, vec3 direction, out float enter, out float exit) {
+
+    vec3 offset = origin - v.params0.xyz;
+    float h = dot(offset, v.axis.xyz);
+    float dh = dot(direction, v.axis.xyz);
+    enter = 0.0;
+    exit = 1e30;
+
+    if (abs(dh) > 1e-6) {
+
+        float nearCap = -h / dh;
+        float farCap = (v.axis.w - h) / dh;
+        enter = max(enter, min(nearCap, farCap));
+        exit = max(nearCap, farCap);
+
+    } else if (h < 0.0 || h > v.axis.w) {
+
+        return false;
+
+    }
+
+    if (exit <= enter) {
+
+        return false;
+
+    }
+
+    // Outside two Gaussian radii the jet contributes less than a ten-thousandth of its centre.
+    float spread = 2.0 * (v.params1.x + 0.02);
+    float radius = 2.0 * v.params0.w + spread * h;
+    vec3 radial = offset - v.axis.xyz * h;
+    vec3 ray = direction - v.axis.xyz * dh;
+    float growth = spread * dh;
+    float a = dot(ray, ray) - growth * growth;
+    float b = dot(ray, radial) - growth * radius;
+    float c = dot(radial, radial) - radius * radius;
+
+    if (abs(a) < 1e-6) {
+
+        if (abs(b) < 1e-6) {
+
+            return c <= 0.0;
+
+        }
+
+        float hit = -0.5 * c / b;
+        if (b > 0.0) {
+
+            exit = min(exit, hit);
+
+        } else {
+
+            enter = max(enter, hit);
+
+        }
+
+        return exit > enter;
+
+    }
+
+    float discriminant = b * b - a * c;
+    if (discriminant <= 0.0) {
+
+        return a < 0.0;
+
+    }
+
+    float root = sqrt(discriminant);
+    float first = (-b - root) / a;
+    float second = (-b + root) / a;
+
+    if (a > 0.0) {
+
+        enter = max(enter, first);
+        exit = min(exit, second);
+
+    } else if (dh > 0.0) {
+
+        enter = max(enter, first);
+
+    } else {
+
+        exit = min(exit, second);
+
+    }
+
+    return exit > enter;
+
+}
+
 bool VolumeSegment(VolumePrimitive v, vec3 origin, vec3 direction, out float enter, out float exit) {
 
     float near;
     float far;
 
-    if (v.kind.x == VolumeCloudLayer) {
+    if (v.kind.x == VolumePlume) {
+
+        return PlumeSegment(v, origin, direction, enter, exit);
+
+    }
+
+    if (v.kind.x == VolumeCloudLayer || v.kind.x == VolumeCirrus) {
 
         return ShellSegment(v, origin, direction, enter, exit);
 
@@ -128,6 +225,15 @@ VolumeSample NoiseSphere(VolumePrimitive v, vec3 p) {
     float base = (1.0 - smoothstep(0.4, 1.0, radial)) * shape.r;
     float density = clamp(Remap(base, 0.25 + erosion * 0.2, 1.0, 0.0, 1.0), 0.0, 1.0);
 
+    if (v.kind.w == 1) {
+
+        float lobe = smoothstep(0.30, 0.72, shape.g);
+        float shell = radial + 0.44 * (0.5 - lobe) + 0.19 * (erosion - 0.5);
+        float entrained = smoothstep(0.18, 0.68, shape.r * (0.48 + 0.67 * lobe) - 0.16 * erosion);
+        density = (1.0 - smoothstep(0.32, 0.89, shell)) * entrained;
+
+    }
+
     VolumeSample s;
 
     s.extinction = density * v.medium.w;
@@ -156,22 +262,45 @@ VolumeSample Plume(VolumePrimitive v, vec3 p) {
 
     }
 
-    float r = distance(offset, v.axis.xyz * x);
+    vec3 transverse = offset - v.axis.xyz * x;
+    float r = length(transverse);
     float radius = exitRadius + x * (v.params1.x + 0.02);
     float dilution = exitRadius * exitRadius / (radius * radius);
+    float spacing = max(v.params1.y, 1e-3);
 
-    float profile = exp(-2.5 * (r * r) / (radius * radius));
+    if (v.kind.w != 0 && x < exitRadius * 12.0) {
+
+        float ring = length(v.position.xyz);
+        vec3 u = v.position.xyz / ring;
+        vec3 w = cross(v.axis.xyz, u);
+        float pitch = 2.0 * PI / float(abs(v.kind.w));
+        float theta = atan(dot(transverse, w), dot(transverse, u));
+        float angle = floor(theta / pitch + 0.5) * pitch;
+        float bellDistance = length(transverse - ring * (u * cos(angle) + w * sin(angle)));
+        float separate = 1.0 - smoothstep(exitRadius, exitRadius * 12.0, x);
+        float bellRadius = exitRadius - ring;
+        r = mix(r, v.kind.w > 0 ? min(r, bellDistance) : bellDistance, separate);
+        radius = mix(radius, bellRadius + x * (v.params1.x + 0.055), separate);
+        spacing *= mix(1.0, bellRadius / exitRadius, separate);
+
+    }
+
+    vec3 flow = offset / (exitRadius * 4.0) - v.axis.xyz * (frame.exposure.w * 6.0);
+    vec4 eddy = texture(shapeNoise, flow);
+    float mixing = smoothstep(0.0, span * 0.35, x);
+    float edge = r / radius + mixing * (eddy.r - 0.5) * 1.35;
+    float profile = exp(-2.5 * edge * edge);
     float along = (1.0 - x / span) * (1.0 - x / span) * smoothstep(0.0, exitRadius * 0.3, x);
 
     // Turbulence streams downstream with the flow and grows with distance from the nozzle.
-    vec3 flow = offset / (exitRadius * 4.0) - v.axis.xyz * (frame.exposure.w * 6.0);
-    float turbulence = mix(1.0, texture(shapeNoise, flow).g * 1.8, smoothstep(0.0, span * 0.3, x));
+    float turbulence = mix(1.0, eddy.g * 1.8, mixing);
 
     float density = profile * dilution * along * turbulence;
 
-    float spacing = max(v.params1.y, 1e-3);
     float wave = 0.5 + 0.5 * cos(6.2831853 * x / spacing);
-    float diamonds = v.params1.z * pow(wave, 6.0) * exp(-(r * r) / (0.36 * radius * radius)) * exp(-x / (spacing * 5.0));
+    float shockRadius = radius * (0.16 + 0.55 * wave);
+    float shockWall = (r - shockRadius) / max(0.22 * radius, 1e-4);
+    float diamonds = v.params1.z * exp(-shockWall * shockWall - x / (spacing * 2.6)) * along;
 
     // A white-hot core near the nozzle inside a cooler sheath; params2 holds the sheath colour and core whiteness.
     vec3 white = vec3(dot(v.emission.rgb, vec3(0.2126, 0.7152, 0.0722)));
@@ -181,7 +310,8 @@ VolumeSample Plume(VolumePrimitive v, vec3 p) {
 
     s.extinction = density * v.medium.w;
     // Afterburning keeps the exhaust glowing as it spreads, so emission thins more slowly than mass.
-    s.emission = hot * profile * sqrt(dilution) * along * turbulence + mix(v.emission.rgb, white, 0.6) * diamonds * 2.0;
+    float cooling = pow(dilution, mix(0.5, 1.13, v.params1.w));
+    s.emission = hot * profile * cooling * along * turbulence + mix(v.emission.rgb, white, 0.6) * diamonds * 0.85;
 
     return s;
 
@@ -215,12 +345,15 @@ VolumeSample CloudLayer(VolumePrimitive v, vec3 p) {
     }
 
     // Coarse towers: their height gives the tops relief that a low sun picks out, even from orbit.
-    vec4 coarse = texture(shapeNoise, body * (v.params2.z * 0.125) + 0.37);
-    float towers = coarse.r;
+    vec3 cell = body * v.params2.z;
+    vec3 driftField = texture(shapeNoise, cell.zxy * 0.0193 + vec3(0.13, 0.37, 0.71)).gba - 0.5;
+    vec4 coarse = texture(shapeNoise, cell * 0.125 + 0.37 + 0.83 * driftField);
+    float towers = smoothstep(0.32, 0.80, coarse.r);
 
     // Flat bases and rounded tops that rise where the weather is densest.
     float top = (0.35 + 0.65 * weather) * (0.6 + 0.4 * towers);
-    float gradient = clamp(Remap(h, 0.0, 0.08, 0.0, 1.0), 0.0, 1.0) * clamp(Remap(h, top * 0.6, top, 1.0, 0.0), 0.0, 1.0);
+    float base = 0.10 * smoothstep(0.2, 0.8, coarse.b) * (1.0 - 0.6 * weather);
+    float gradient = smoothstep(base, base + 0.08, h) * clamp(Remap(h, top * 0.6, top, 1.0, 0.0), 0.0, 1.0);
 
     if (gradient <= 0.0) {
 
@@ -235,7 +368,7 @@ VolumeSample CloudLayer(VolumePrimitive v, vec3 p) {
 
     if (shapeWeight > 0.0) {
 
-        vec4 shape = texture(shapeNoise, body * v.params2.z + vec3(v.params2.x, 0.0, 0.0));
+        vec4 shape = texture(shapeNoise, cell + 1.8 * driftField + 0.65 * (coarse.gba - 0.5) + vec3(v.params2.x, 0.0, 0.0));
         float fbm = shape.g * 0.625 + shape.b * 0.25 + shape.a * 0.125;
 
         // The billows tile every shape period, so in thin weather their few peaks line up; cells of the coarse field, a period across, decide which rise.
@@ -246,17 +379,23 @@ VolumeSample CloudLayer(VolumePrimitive v, vec3 p) {
     }
 
     float density = clamp(Remap(billows * gradient, 1.0 - weather, 1.0, 0.0, 1.0), 0.0, 1.0);
+    density *= mix(0.18, 1.0, smoothstep(0.18, 0.80, coarse.g)) * sqrt(weather);
 
     if (density <= 0.0 || detailWeight <= 0.0) {
 
-        s.extinction = density * v.medium.w;
+        float extinction = density * v.medium.w;
+        // A distant pixel sees clear gaps between opaque billows; average their transmission.
+        float path = clamp(volumeFootprint, 1.0, 1300.0);
+        float fill = 0.32 + 0.63 * smoothstep(0.02, 0.54, density);
+        float filtered = -log(max(0.0001, mix(1.0, exp(-extinction * path), fill))) / path;
+        s.extinction = mix(extinction, filtered, smoothstep(240.0, 1400.0, volumeFootprint));
 
         return s;
 
     }
 
     // Wispy at the base, billowy towards the top.
-    vec4 detail = texture(detailNoise, body * v.params2.w + vec3(v.params2.y, 0.0, 0.0));
+    vec4 detail = texture(detailNoise, body.zxy * v.params2.w + 2.3 * coarse.bag + vec3(v.params2.y, 0.0, 0.0));
     float wisps = detail.r * 0.625 + detail.g * 0.25 + detail.b * 0.125;
 
     wisps = mix(wisps, 1.0 - wisps, clamp(h * 4.0, 0.0, 1.0));
@@ -322,27 +461,28 @@ VolumeSample Shock(VolumePrimitive v, vec3 p) {
     float nose = v.params0.w;
     float x = dot(offset, v.axis.xyz);
 
-    if (x < -nose * 0.5 || x > v.axis.w) {
+    if (x < -nose || x > v.axis.w) {
 
         return s;
 
     }
 
     float r = length(offset - v.axis.xyz * x);
-    float front = sqrt(2.0 * nose * max(x, 0.0));
-    float thickness = nose * 0.3 + x * 0.06;
+    float slope = r / nose;
+    float behind = (x - 0.5 * r * slope) * inversesqrt(1.0 + slope * slope);
+    float thickness = nose * 0.12 + max(x, 0.0) * 0.055;
 
     // The shock front glows hardest, and the compressed gas behind it fades downstream; the flow tears it into flickering streaks.
-    float sheet = exp(-pow((r - front) / thickness, 2.0));
-    float inside = 1.0 - smoothstep(front - thickness, front + thickness, r);
+    float sheet = exp(-pow(behind / thickness, 2.0));
+    float inside = smoothstep(-thickness, thickness, behind) * exp(-max(behind, 0.0) / (nose * 0.34));
     float streaks = texture(shapeNoise, vec3(r / (nose * 1.5), x / (nose * 6.0) - frame.exposure.w * 2.0, 0.37 + u * sqrt(reach) / (nose * 4.0))).r;
 
     // Hottest in the layer pressed against the nose where the shock stands normal; as it turns oblique down the flanks it barely glows.
     float fade = 1.0 - smoothstep(v.axis.w * 0.5, v.axis.w, x);
-    float layer = 0.6 * inside * exp(-max(x, 0.0) / (nose * 0.3));
-    float glow = (sheet * exp(-max(x, 0.0) / (nose * 0.35)) + layer) * fade * (0.5 + streaks) * mix(1.0, v.params1.w, u);
+    float cooling = exp(-max(x, 0.0) / (nose * 0.74));
+    float glow = (sheet + 0.38 * inside) * cooling * fade * (0.35 + streaks) * mix(1.0, v.params1.w, u);
 
-    s.emission = v.emission.rgb * glow;
+    s.emission = v.emission.rgb * mix(vec3(1.0, 0.38, 0.16), vec3(1.0), cooling) * glow;
     s.extinction = v.medium.w * glow;
 
     return s;
@@ -350,6 +490,22 @@ VolumeSample Shock(VolumePrimitive v, vec3 p) {
 }
 
 VolumeSample SampleVolume(VolumePrimitive v, vec3 p) {
+
+    if (v.kind.x == VolumeCirrus) {
+
+        vec3 body = QuaternionRotate(v.axis, p - v.params0.xyz);
+        vec3 cell = body * v.params1.z;
+        vec4 warp = texture(shapeNoise, cell * 0.036);
+        vec3 streak = cell * vec3(1.7, 7.0, 9.0) + 2.5 * warp.rgb + vec3(v.params1.w, 0.0, 0.0);
+        vec4 systems = WeatherSystems(body);
+        float weather = sqrt(systems.a) * smoothstep(0.32, 0.68, warp.g) * v.params1.y;
+        float fibres = texture(shapeNoise, streak).r;
+        float fine = texture(detailNoise, streak * 2.1).g;
+        float density = weather * smoothstep(0.31, 0.78, fibres * 0.78 + fine * 0.22);
+
+        return VolumeSample(v.medium.w * density, vec3(0.0));
+
+    }
 
     if (v.kind.x == VolumeShock) {
 
@@ -372,6 +528,27 @@ VolumeSample SampleVolume(VolumePrimitive v, vec3 p) {
     if (v.kind.x == VolumeNoiseSphere) {
 
         return NoiseSphere(v, p);
+
+    }
+
+    if (v.kind.x == VolumeGroundOutflow) {
+
+        vec3 local = (p - v.position.xyz) / v.position.w;
+        float height = dot(local, v.axis.xyz);
+        vec3 lateral = local - height * v.axis.xyz;
+        float reach = length(lateral);
+        float time = frame.exposure.w;
+        vec3 outward = lateral / max(reach, 0.05);
+        // Advect through a bounded phase so the billows keep their spatial frequency.
+        vec3 noiseUv = local * 1.9 - outward * 0.16 * sin(time * 1.5 - reach * 9.0) - v.axis.xyz * time * 0.11;
+        vec4 lobes = texture(shapeNoise, noiseUv);
+        float wisps = texture(detailNoise, noiseUv * 3.4).r;
+        float swell = smoothstep(0.28, 0.78, lobes.r * 0.80 + 0.20 * wisps);
+        float top = (0.045 + 0.36 * swell) * smoothstep(0.0, 0.4, reach);
+        float edge = 1.0 - smoothstep(0.44 + 0.24 * lobes.b, 0.73 + 0.22 * lobes.g, reach);
+        float layer = (1.0 - smoothstep(top * 0.18, max(top, 0.01), height)) * step(-0.012, height);
+
+        return VolumeSample(v.medium.w * edge * layer * (0.15 + 0.85 * swell), vec3(0.0));
 
     }
 
@@ -421,8 +598,9 @@ struct VolumeResult {
     vec3 luminance;
     float transmittance;
 
-    // Transmittance-weighted mean depth of what was seen, for compositing.
+    // Emission also carries a depth when the gas is optically thin.
     float depth;
+    float depthWeight;
 
 };
 
@@ -434,15 +612,39 @@ void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, fl
     // Clouds step no finer than they need: 60 m up close, about a pixel's footprint further away.
     float stepLength = max(60.0, enter * pixelAngle * 0.35);
     int steps = v.kind.x == VolumeCloudLayer ? clamp(int((exit - enter) / stepLength), 24, v.kind.y) : max(v.kind.y, 1);
-    float dt = (exit - enter) / float(steps);
+    float stepSpan = (exit - enter) / float(steps);
+    float growth = 1.0;
+
+    if (v.kind.x == VolumePlume) {
+
+        float startHeight = max(0.0, dot(origin - v.params0.xyz + direction * enter, v.axis.xyz));
+        float endHeight = max(0.0, dot(origin - v.params0.xyz + direction * exit, v.axis.xyz));
+        float spread = v.params1.x + 0.02;
+        float ratio = (v.params0.w + spread * endHeight) / (v.params0.w + spread * startHeight);
+        if (abs(ratio - 1.0) > 0.06) {
+
+            // Short steps resolve the hot throat even when the same ray crosses a long vacuum fan.
+            growth = pow(ratio, 1.0 / float(steps));
+            stepSpan = (exit - enter) * (growth - 1.0) / (ratio - 1.0);
+
+        }
+
+    }
+
+    float stepStart = enter;
     vec3 sunDirection = frame.sunDirection.xyz;
     float cosTheta = dot(direction, sunDirection);
     float g = v.emission.w;
     vec3 albedo = v.medium.rgb;
+    float shadow = 0.0;
+    float shadowAt = -1e30;
 
     for (int i = 0; i < steps; i++) {
 
-        float t = enter + (float(i) + jitter) * dt;
+        float dt = stepSpan;
+        float t = stepStart + jitter * dt;
+        stepStart += dt;
+        stepSpan *= growth;
 
         volumeFootprint = t * pixelAngle;
         vec3 p = origin + direction * t;
@@ -454,8 +656,26 @@ void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, fl
 
         }
 
+        if (s.extinction <= 1e-6) {
+
+            vec3 light = result.transmittance * s.emission * dt;
+            float weight = min(dot(light, vec3(0.2126, 0.7152, 0.0722)) * frame.exposure.x, result.transmittance);
+            result.luminance += light;
+            result.depth += weight * t;
+            result.depthWeight += weight;
+
+            continue;
+
+        }
+
         vec3 sun = SunIlluminanceAt(p);
-        float shadow = SunOpticalDepth(v, p, sunDirection);
+        // Shadow variation below a volume pixel is unresolved; nearby march steps can share it.
+        if (v.kind.x != VolumeCloudLayer || t - shadowAt >= min(volumeFootprint, 650.0)) {
+
+            shadow = SunOpticalDepth(v, p, sunDirection);
+            shadowAt = t;
+
+        }
         vec3 up = normalize(PlanetRelative(p));
         vec3 ambient = (AmbientIrradiance(p, up) + AmbientIrradiance(p, -up)) / (4.0 * PI) * EclipseSkylight(p);
 
@@ -484,7 +704,8 @@ void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, fl
             vec3 toLight = frame.lightPositions[light].xyz - p;
             float distanceSquared = dot(toLight, toLight) + frame.lightPositions[light].w * frame.lightPositions[light].w;
 
-            ambient += frame.lightIntensities[light].rgb / distanceSquared / (4.0 * PI);
+            float beam = BeamWeight(light, toLight * inversesqrt(max(dot(toLight, toLight), 1e-6)));
+            ambient += frame.lightIntensities[light].rgb * beam / distanceSquared / (4.0 * PI);
 
         }
 
@@ -495,7 +716,10 @@ void MarchVolume(VolumePrimitive v, vec3 origin, vec3 direction, float enter, fl
         float span = s.extinction * dt > 1e-4 ? (1.0 - stepTransmittance) / s.extinction : dt;
 
         result.luminance += result.transmittance * source * span;
-        result.depth += result.transmittance * (1.0 - stepTransmittance) * t;
+        float emitted = dot(s.emission, vec3(0.2126, 0.7152, 0.0722)) * span * frame.exposure.x;
+        float weight = result.transmittance * max(1.0 - stepTransmittance, min(emitted, 1.0));
+        result.depth += weight * t;
+        result.depthWeight += weight;
         result.transmittance *= stepTransmittance;
 
         if (result.transmittance < 0.005) {

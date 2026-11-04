@@ -90,6 +90,13 @@ public static class GltfModelLoader {
                 material.MetallicRoughnessTexture = Texture(pbr?.MetallicRoughnessTexture?.Index, srgb: false);
                 material.EmissiveTexture = Texture(source.EmissiveTexture?.Index, srgb: true);
 
+                if (source.Extensions?.ContainsKey("KHR_materials_emissive_strength") == true) {
+
+                    var emission = source.GetExtension<MaterialsEmissiveStrengthGltfMaterialExtension>("KHR_materials_emissive_strength");
+                    material.Emissive *= emission?.EmissiveStrength ?? 1;
+
+                }
+
                 if (source.NormalTexture is { } normal) {
 
                     material.NormalTexture = Texture(normal.Index, srgb: false);

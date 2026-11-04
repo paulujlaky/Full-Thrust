@@ -12,6 +12,8 @@ public enum VolumeKind {
     CloudLayer,
     Trail,
     Shock,
+    GroundOutflow,
+    Cirrus,
 
 }
 

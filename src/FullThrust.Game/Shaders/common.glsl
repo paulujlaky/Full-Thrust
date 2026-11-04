@@ -55,6 +55,7 @@ layout(set = 0, binding = 0) uniform Frame {
     // Point lights such as engine plumes: xyz position, w softening radius; rgb intensity in candela; x count.
     vec4 lightPositions[4];
     vec4 lightIntensities[4];
+    vec4 lightDirections[4];
     vec4 lightCount;
 
     // Bodies that can pass in front of the sun: xyz centre relative to the camera, w radius; rgb of the sunlight each leaks into its umbra.
@@ -71,6 +72,7 @@ layout(set = 0, binding = 5) uniform sampler2D skyViewLut;
 layout(set = 0, binding = 6) uniform sampler2D irradianceLut;
 layout(set = 0, binding = 7) uniform sampler3D aerialPerspective;
 layout(set = 0, binding = 8) uniform sampler3D cloudNoise;
+layout(set = 0, binding = 11) uniform sampler2D weatherMap;
 layout(set = 0, binding = 9) uniform sampler2D skyShafts;
 layout(set = 0, binding = 10) uniform sampler2D cloudShadowMap;
 
@@ -116,8 +118,10 @@ vec3 AmbientIrradiance(vec3 p, vec3 n) {
 
 }
 
-// Radiance arriving along a direction: the sky-view table above the horizon, lit ground below it, the hemisphere model in space.
-vec3 EnvironmentRadiance(vec3 p, vec3 direction) {
+vec3 QuaternionRotate(vec4 q, vec3 v);
+float CloudWeather(sampler3D noise, vec3 body, float inverseScale, float drift, float coverage);
+
+vec3 EnvironmentRadiance(vec3 p, vec3 direction, float roughness) {
 
     vec3 hemisphere = AmbientIrradiance(p, direction) / PI;
     float weight = AtmosphereWeight(p);
@@ -125,6 +129,26 @@ vec3 EnvironmentRadiance(vec3 p, vec3 direction) {
     float r = length(origin);
 
     if (weight <= 0.0 || r >= TopRadius()) {
+
+        vec3 toBody = frame.cameraPosition.xyz + frame.occluders[0].xyz - p;
+        float distance = length(toBody);
+        float radius = frame.occluders[0].w;
+        if (roughness < 0.48 && radius > distance * 0.001 && distance > radius) {
+
+            vec3 center = toBody / distance;
+            float ratio = radius / distance;
+            float rim = sqrt(max(1.0 - ratio * ratio, 0.0));
+            float mu = dot(center, direction);
+            float spread = max(0.002, roughness * roughness * ratio);
+            float disc = smoothstep(rim - spread, rim + spread, mu);
+            float hit = mu - sqrt(max(0.0, mu * mu - rim * rim));
+            vec3 groundNormal = normalize(direction * hit - center);
+            float day = max(0.0, dot(groundNormal, frame.sunDirection.xyz));
+            vec3 tint = AtmosphereEnabled() ? vec3(0.12, 0.18, 0.25) : vec3(0.16, 0.15, 0.14);
+            vec3 globe = frame.sunIlluminance.rgb * tint * day * disc * frame.groundIrradiance.w / PI;
+            return mix(globe, hemisphere, smoothstep(0.16, 0.48, roughness));
+
+        }
 
         return hemisphere;
 
@@ -138,6 +162,23 @@ vec3 EnvironmentRadiance(vec3 p, vec3 direction) {
     float below = smoothstep(0.0, 0.15, horizon - mu);
     vec3 skyward = normalize(direction + up * max(horizon + 0.002 - mu, 0.0));
     vec3 sky = SkyViewLuminance(origin, skyward, frame.sunDirection.xyz) * frame.sunIlluminance.rgb;
+
+    if (roughness < 0.36 && frame.cloudShell.w > 0.0 && mu > horizon) {
+
+        vec3 relative = p - frame.cloudShell.xyz;
+        float near;
+        float far;
+        if (length(relative) < frame.cloudShell.w && RaySphere(relative, direction, frame.cloudShell.w, near, far)) {
+
+            vec3 body = QuaternionRotate(frame.cloudRotation, relative + direction * far);
+            float cloud = CloudWeather(cloudNoise, body, frame.cloudWeather.z, frame.cloudWeather.w, frame.cloudWeather.y);
+            float day = max(0.0, dot(up, frame.sunDirection.xyz));
+            float visibility = (1.0 - roughness / 0.36) * smoothstep(horizon, horizon + 0.10, mu);
+            sky = mix(sky, frame.sunIlluminance.rgb * (0.22 * day / PI), smoothstep(0.03, 0.55, cloud) * visibility);
+
+        }
+
+    }
 
     vec3 environment = mix(sky, AtmosphereIrradiance(p, -up) / PI, below);
 
@@ -196,7 +237,21 @@ struct Surface {
 
 };
 
-// Cook-Torrance GGX under the sun plus a hemisphere ambient; returns radiance before exposure.
+float BeamWeight(int index, vec3 towardLight) {
+
+    vec4 beam = frame.lightDirections[index];
+    if (beam.w <= 0.0) {
+
+        return 1.0;
+
+    }
+
+    return smoothstep(beam.w, mix(beam.w, 1.0, 0.45), -dot(beam.xyz, towardLight));
+
+}
+
+float CloudShadow(vec3 worldPosition);
+
 vec3 ShadeSurface(Surface s, vec3 p, vec3 n, vec3 v, float shadow) {
 
     vec3 l = frame.sunDirection.xyz;
@@ -214,12 +269,33 @@ vec3 ShadeSurface(Surface s, vec3 p, vec3 n, vec3 v, float shadow) {
     vec3 specular = DistributionGgx(nh, roughness) * VisibilitySmithGgx(nv, nl, roughness) * f;
     vec3 diffuse = (1.0 - f) * (1.0 - s.metallic) * s.albedo / PI;
 
-    vec3 direct = (diffuse + specular) * SunIlluminanceAt(p) * nl * shadow;
+    // Rough surfaces scatter more light back toward the viewer at grazing angles.
+    float grazing = 2.0 * roughness * vh * vh - 0.5;
+    float diffuseResponse = (1.0 + grazing * pow(1.0 - nl, 5.0)) * (1.0 + grazing * pow(1.0 - nv, 5.0));
+    vec3 sun = SunIlluminanceAt(p);
+    vec3 direct = (diffuse * diffuseResponse + specular) * sun * nl * shadow;
 
     // Specular ambient reflects the sky and the ground, blurring towards irradiance as roughness rises.
     vec3 ambientF = FresnelSchlickRoughness(nv, f0, roughness);
     vec3 irradiance = AmbientIrradiance(p, n);
-    vec3 reflected = EnvironmentRadiance(p, reflect(-v, n));
+    vec3 reflected = EnvironmentRadiance(p, reflect(-v, n), roughness);
+    vec3 relative = p - frame.cloudShell.xyz;
+    if (frame.cloudShell.w > 0.0 && length(relative) < frame.cloudShell.w) {
+
+        vec3 up = normalize(relative);
+        float cover = clamp(1.0 - CloudShadow(p), 0.0, 1.0);
+        float skyView = 0.5 + 0.5 * dot(n, up);
+        float daylight = max(dot(up, l), 0.0);
+        vec3 transmitted = sun * daylight * cover;
+        // Cloud bases redistribute part of the intercepted sunlight across the sky hemisphere.
+        vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+        float diffuseSky = dot(transmitted, luma) * mix(0.085, 0.38, skyView);
+        irradiance = mix(irradiance, vec3(dot(irradiance, luma)), cover) + diffuseSky * frame.groundIrradiance.w;
+        vec3 cloudReflection = vec3(dot(reflected, luma)) * 0.55 + irradiance * (0.45 / PI);
+        reflected = mix(reflected, cloudReflection, cover);
+
+    }
+
     vec3 ambient = (1.0 - ambientF) * (1.0 - s.metallic) * s.albedo * irradiance / PI + ambientF * mix(reflected, irradiance / PI, roughness);
 
     ambient *= EclipseSkylight(p);
@@ -241,7 +317,7 @@ vec3 ShadeSurface(Surface s, vec3 p, vec3 n, vec3 v, float shadow) {
         float skim = dot(s.geometricNormal, pl);
         float exposed = s.relief > 0.0 ? smoothstep(0.0, s.relief, skim) : step(0.0, skim);
 
-        direct += (pointDiffuse + pointSpecular) * frame.lightIntensities[i].rgb / distanceSquared * pnl * exposed;
+        direct += (pointDiffuse + pointSpecular) * frame.lightIntensities[i].rgb / distanceSquared * pnl * exposed * BeamWeight(i, pl);
 
     }
 
@@ -393,14 +469,24 @@ vec3 QuaternionRotate(vec4 q, vec3 v) {
 }
 
 // Cloud coverage at a body-fixed point: local weather thinned or thickened by systems a thousand kilometres across.
+vec4 WeatherSystems(vec3 body) {
+
+    vec3 p = normalize(body);
+    vec2 uv = 0.5 - vec2(atan(p.z, p.x) / (2.0 * PI), asin(clamp(p.y, -1.0, 1.0)) / PI);
+    float pole = 0.5 / float(textureSize(weatherMap, 0).y);
+    uv.y = clamp(uv.y, pole, 1.0 - pole);
+
+    return textureLod(weatherMap, uv, 0.0);
+
+}
+
 float CloudWeather(sampler3D noise, vec3 body, float inverseScale, float drift, float coverage) {
 
     vec3 coord = body * inverseScale + vec3(drift, 0.0, 0.0);
-    float weather = texture(noise, coord).r * 0.65 + texture(noise, coord * 0.27 + 0.31).g * 0.35;
-    float systems = texture(noise, coord * 0.067 + 0.53).g;
-    float local = clamp(coverage * (0.25 + 1.5 * smoothstep(0.25, 0.75, systems)), 0.0, 1.0);
+    float satellite = WeatherSystems(body).a;
+    float billow = texture(noise, coord).r;
 
-    return clamp(Remap(weather, 1.0 - local, 1.0, 0.0, 1.0), 0.0, 1.0);
+    return clamp(sqrt(satellite) * coverage * (1.5 + 0.5 * billow), 0.0, 1.0);
 
 }
 

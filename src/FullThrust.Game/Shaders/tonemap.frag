@@ -105,10 +105,47 @@ float Dither(vec2 pixel) {
 
 }
 
+float EdgeLuma(vec3 color) {
+
+    float y = dot(color, vec3(0.2126, 0.7152, 0.0722));
+
+    return sqrt(y / (1.0 + y));
+
+}
+
+vec3 ResolveEdges(vec2 uv) {
+
+    vec2 pixel = 1.0 / vec2(textureSize(hdr, 0));
+    vec3 center = texture(hdr, uv).rgb;
+    float nw = EdgeLuma(textureOffset(hdr, uv, ivec2(-1, -1)).rgb);
+    float ne = EdgeLuma(textureOffset(hdr, uv, ivec2(1, -1)).rgb);
+    float sw = EdgeLuma(textureOffset(hdr, uv, ivec2(-1, 1)).rgb);
+    float se = EdgeLuma(textureOffset(hdr, uv, ivec2(1, 1)).rgb);
+    float mid = EdgeLuma(center);
+    float low = min(mid, min(min(nw, ne), min(sw, se)));
+    float high = max(mid, max(max(nw, ne), max(sw, se)));
+
+    if (high - low < max(0.035, high * 0.13)) {
+
+        return center;
+
+    }
+
+    vec2 tangent = vec2(sw + se - nw - ne, nw + sw - ne - se);
+    float reduction = max((nw + ne + sw + se) * 0.03125, 0.008);
+    vec2 span = clamp(tangent / (min(abs(tangent.x), abs(tangent.y)) + reduction), -6.0, 6.0) * pixel;
+    vec3 inner = 0.5 * (texture(hdr, uv - span / 6.0).rgb + texture(hdr, uv + span / 6.0).rgb);
+    vec3 outer = inner * 0.5 + 0.25 * (texture(hdr, uv - span * 0.5).rgb + texture(hdr, uv + span * 0.5).rgb);
+    float filtered = EdgeLuma(outer);
+
+    return filtered < low || filtered > high ? inner : outer;
+
+}
+
 void main() {
 
     // Energy-conserving: bloom takes its share of the image rather than adding light.
-    vec3 color = mix(texture(hdr, vUv).rgb, texture(bloom, vUv).rgb, pc.bloomIntensity);
+    vec3 color = mix(ResolveEdges(vUv), texture(bloom, vUv).rgb, pc.bloomIntensity);
 
     vec3 mapped;
 

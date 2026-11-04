@@ -59,17 +59,18 @@ public sealed class OrbitDebugDraw {
             }
 
             var color = new float4(body.DebugColor * 0.8f, 0.6f);
-            var state = _system.RelativeState(body, now);
+
 
             if (DrawBodyOrbits) {
 
-                DrawConic(body.Parent.Index, state, now, now, now + body.OrbitalPeriod, body.OrbitGravitationalParameter, color);
+                // Anchor closed rails to their epoch so the polygon edges stay still as time advances.
+                DrawConic(body.Parent.Index, body.EpochState, body.OrbitEpoch, body.OrbitEpoch, body.OrbitEpoch + body.OrbitalPeriod, body.OrbitGravitationalParameter, color, _system.Position(body.Parent.Index));
 
             }
 
             if (DrawSpheresOfInfluence) {
 
-                var normal = double3.Cross(state.Position, state.Velocity);
+                var normal = double3.Cross(body.EpochState.Position, body.EpochState.Velocity);
 
                 _lines.Circle(_system.Position(body.Index), normal, body.SphereOfInfluence, new float4(color.XYZ, 0.35f));
 
@@ -117,7 +118,7 @@ public sealed class OrbitDebugDraw {
 
     }
 
-    private void DrawConic(int body, in StateVector epoch, double epochTime, double from, double to, double mu, float4 color) {
+    private void DrawConic(int body, in StateVector epoch, double epochTime, double from, double to, double mu, float4 color, double3? fixedCenter = null) {
 
         if (!(to > from)) {
 
@@ -133,7 +134,7 @@ public sealed class OrbitDebugDraw {
         for (var i = 0; i < MaxPointsPerPatch; i++) {
 
             var relative = _system.Propagator.Propagate(epoch, mu, t - epochTime);
-            var frame = _system.StateAt(body, t).Position;
+            var frame = fixedCenter ?? _system.StateAt(body, t).Position;
 
             _lines.StripPoint(frame + relative.Position, color);
 

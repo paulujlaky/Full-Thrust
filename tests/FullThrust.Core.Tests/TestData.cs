@@ -17,6 +17,13 @@ internal static class TestData {
 
     public static PartCatalog Parts() => PartCatalogLoader.LoadFile(PartsPath);
 
-    public static RocketCatalog Rockets(PartCatalog parts) => RocketCatalogLoader.LoadFile(RocketsPath, parts);
+    public static RocketCatalog Rockets(PartCatalog parts) {
+
+        var current = RocketCatalogLoader.LoadFile(RocketsPath, parts);
+        var historical = RocketCatalogLoader.LoadFile(Path.Combine(AppContext.BaseDirectory, "historical-rockets.json"), parts);
+
+        return new RocketCatalog([..current.Rockets, ..historical.Rockets]);
+
+    }
 
 }

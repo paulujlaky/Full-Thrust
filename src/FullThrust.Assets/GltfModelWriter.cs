@@ -119,7 +119,32 @@ public static class GltfModelWriter {
 
         }
 
-        gltf.SaveBinaryModel(bytes, path);
+        // Renderers can still have the previous GLB mapped while the generator writes its replacement.
+        var temporary = Path.Combine(directory!, Path.GetRandomFileName() + ".glb");
+        try {
+
+            gltf.SaveBinaryModel(bytes, temporary);
+
+            for (var attempt = 0; ; attempt++) {
+
+                try {
+
+                    File.Move(temporary, path, true);
+                    break;
+
+                } catch (IOException error) when (attempt < 5 && (error.HResult & 0xffff) is 32 or 1224) {
+
+                    Thread.Sleep(50 * (attempt + 1));
+
+                }
+
+            }
+
+        } finally {
+
+            File.Delete(temporary);
+
+        }
 
     }
 
@@ -162,6 +187,8 @@ public static class GltfModelWriter {
                 Name = source.Name,
                 EmissiveFactor = source.Emissive,
                 DoubleSided = source.DoubleSided,
+                AlphaMode = (Material.AlphaModeEnum)source.AlphaMode,
+                AlphaCutoff = source.AlphaCutoff,
 
                 PbrMetallicRoughness = new MaterialPbrMetallicRoughness {
 
@@ -180,6 +207,24 @@ public static class GltfModelWriter {
             if (source.NormalTexture >= 0) {
 
                 material.NormalTexture = new MaterialNormalTextureInfo { Index = source.NormalTexture, Scale = source.NormalScale };
+
+            }
+
+            var strength = Math.Max(source.Emissive.X, Math.Max(source.Emissive.Y, source.Emissive.Z));
+            if (strength > 1) {
+
+                const string extension = "KHR_materials_emissive_strength";
+                material.EmissiveFactor = source.Emissive / strength;
+                material.Extensions = new Dictionary<string, object> {
+
+                    [extension] = new MaterialsEmissiveStrengthGltfMaterialExtension {
+
+                        EmissiveStrength = strength,
+
+                    },
+
+                };
+                gltf.ExtensionsUsed = [extension];
 
             }
 

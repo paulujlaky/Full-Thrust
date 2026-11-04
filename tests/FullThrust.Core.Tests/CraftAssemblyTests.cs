@@ -141,6 +141,13 @@ public class CraftAssemblyTests {
 
         Assert.Equal(vacuumEngine.Definition.FrontalArea, vacuumEngine.Aero.BottomArea, 1e-9);
 
+        harness.Stage(craft);
+
+        var spentTank = harness.FindPart<TankState>("tank-harrier-2");
+        Assert.NotEqual(craft, harness.Get<Part>(spentTank).Craft);
+        Assert.True(harness.Get<DecouplerState>(spentTank).Fired);
+        Assert.Equal(5, harness.Get<Vessel>(craft).PartCount);
+
     }
 
     [Fact]

@@ -65,13 +65,13 @@ public sealed class VolumetricRenderer : IRenderPass, IResizeListener, IFrameUni
     private float4x4 _previousViewProjection;
     private double3 _previousOrigin;
 
-    public VolumetricRenderer(DeviceEx device, ShaderLibrary shaders, HdrTarget target, FrameResources frames, FloatingOrigin origin) {
+    public VolumetricRenderer(DeviceEx device, ShaderLibrary shaders, HdrTarget target, FrameResources frames, FloatingOrigin origin, GpuUploader uploader) {
 
         _device = device;
         _target = target;
         _origin = origin;
 
-        _noise = new VolumeNoise(device, shaders, frames.SetLayout);
+        _noise = new VolumeNoise(device, shaders, frames.SetLayout, uploader);
 
         _pointSampler = CreateSampler(device, VkFilter.Nearest);
         _linearSampler = CreateSampler(device, VkFilter.Linear);
@@ -151,6 +151,7 @@ public sealed class VolumetricRenderer : IRenderPass, IResizeListener, IFrameUni
         CompositePass = new Composite(this, shaders, frames.SetLayout);
 
         frames.WriteImage(GlobalBindings.CloudNoise, _noise.Shape, _noise.Sampler, VkImageLayout.General);
+        frames.WriteImage(GlobalBindings.WeatherMap, _noise.Weather, _noise.Sampler);
 
     }
 

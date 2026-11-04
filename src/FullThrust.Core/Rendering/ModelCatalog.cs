@@ -85,5 +85,7 @@ public sealed class ModelCatalog {
 public struct ModelInstance {
 
     public int Model;
+    public int? Shroud;
+    public double DetailRange;
 
 }

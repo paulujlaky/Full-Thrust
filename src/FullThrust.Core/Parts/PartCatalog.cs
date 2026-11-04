@@ -236,8 +236,15 @@ public static class PartCatalogLoader {
 
         var oxidizer = string.IsNullOrWhiteSpace(data.Oxidizer) ? -1 : Resolve(part, data.Oxidizer, resources).Id;
 
+        if (data.Cluster is { } cluster && (cluster.RingCount < 1 || cluster.RingCount > 32 || cluster.RingRadius <= 0 || cluster.Diameter <= 0 || cluster.Length <= 0)) {
+
+            throw new InvalidDataException($"{part.Id}: invalid engine cluster dimensions.");
+
+        }
+
         return new EngineDefinition {
 
+            Cluster = data.Cluster,
             Fuel = Resolve(part, data.Fuel, resources).Id,
             Oxidizer = oxidizer,
             MixtureRatio = oxidizer < 0 ? 0 : data.MixtureRatio,

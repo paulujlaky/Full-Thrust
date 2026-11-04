@@ -358,9 +358,6 @@ void main() {
     vec3 bodyUp = normalize(transpose(mat3(pc.model)) * normalize(vUp));
     float radiansPerPixel = length(fwidth(bodyUp));
 
-    // Smooth index picking which shifted copy of each tile to show, so tiling never forms a lattice.
-    float variant = ValueNoise(vDetail * (1.0 / 64.0), DetailPeriod / 64.0) * 8.0;
-
     float weights[8] = float[](vWeights0.x, vWeights0.y, vWeights0.z, vWeights0.w, vWeights1.x, vWeights1.y, vWeights1.z, vWeights1.w);
     int layers[8] = int[](body.layers0.x, body.layers0.y, body.layers0.z, body.layers0.w, body.layers1.x, body.layers1.y, body.layers1.z, body.layers1.w);
     float scales[8] = float[](body.tileScale0.x, body.tileScale0.y, body.tileScale0.z, body.tileScale0.w, body.tileScale1.x, body.tileScale1.y, body.tileScale1.z, body.tileScale1.w);
@@ -424,7 +421,7 @@ void main() {
 
             float levelFade;
 
-            samples[i] = SampleLayered(layers[pick[i]], vDetail, detailDx, detailDy, blend, scales[pick[i]], metresPerPixel, variant, levelFade);
+            samples[i] = SampleLayered(layers[pick[i]], vDetail, detailDx, detailDy, blend, scales[pick[i]], metresPerPixel, levelFade);
             fade = max(fade, levelFade);
             // Mean-centred heights sharpen transitions, at the fine level only so tiles never print.
             float contrast = 0.6 * TileFade(metresPerPixel, scales[pick[i]]);
@@ -498,6 +495,16 @@ void main() {
 
     bool ocean = body.deepWater.w > 0.5;
     float time = frame.exposure.w;
+
+    // Body-fixed kilometres bridge the gap between the vertex biomes and metre-scale detail.
+    vec3 regional = bodyUp * (body.streets.x / 52000.0);
+    vec3 distortion = texture(cloudNoise, regional * 0.09).gba - 0.5;
+    float geology = ValueNoise(regional + distortion * 1.7, DetailPeriod) - 0.5;
+    float localTone = ValueNoise(regional * 4.7 + distortion * 2.3, DetailPeriod) - 0.5;
+    localTone *= 1.0 - smoothstep(1400.0, 6000.0, metresPerPixel);
+    float cover = geology + 0.52 * localTone;
+    s.albedo *= exp2(cover * vec3(0.85, 0.72, 0.6));
+    s.albedo *= mix(vec3(1.0), exp2(cover * vec3(0.6, -0.12, -0.45)), vWeights0.x);
 
     // Wet ground just above the waterline is darker and glossier.
     if (ocean && vHeight >= 0.0 && vHeight < 1.5) {

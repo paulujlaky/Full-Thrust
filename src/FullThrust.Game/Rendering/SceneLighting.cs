@@ -82,6 +82,8 @@ public sealed class SceneLighting {
 
     public float Exposure => 1.0f / (1.2f * MathF.Pow(2.0f, Ev100));
 
+    public PointLights SiteLights { get; } = new();
+
     public void Update(CelestialSystem system, double universalTime, double3 camera, double3 cameraForward, double3 cameraUp) {
 
         var sun = system.Sun;

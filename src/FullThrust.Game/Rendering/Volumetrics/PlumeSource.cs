@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Brutal.Numerics;
+using FullThrust.Core.Bodies;
 using FullThrust.Core.Craft;
 using FullThrust.Core.Ecs;
 using FullThrust.Core.Parts;
@@ -61,12 +62,14 @@ public sealed class PlumeSource : IVolumeSource {
     private readonly PlumeStyleData?[] _styles;
 
     private readonly PointLights _lights;
+    private readonly GroundSteam _steam;
 
-    public PlumeSource(World world, FloatingOrigin origin, PointLights lights, PartCatalog parts, string stylesFile) {
+    public PlumeSource(World world, FloatingOrigin origin, PointLights lights, PartCatalog parts, string stylesFile, CelestialSystem bodies) {
 
         _world = world;
         _origin = origin;
         _lights = lights;
+        _steam = new GroundSteam(bodies, origin);
 
         var data = JsonSerializer.Deserialize<PlumeStylesData>(File.ReadAllText(stylesFile), Options) ?? new PlumeStylesData();
 
@@ -83,6 +86,8 @@ public sealed class PlumeSource : IVolumeSource {
     public bool Visible { get; set; } = true;
 
     public int Count { get; private set; }
+    public double UniversalTime { get; set; }
+    public void ClearSteam() => _steam.Clear();
 
     public PlumeStyleData? StyleFor(int fuel) => fuel >= 0 && fuel < _styles.Length ? _styles[fuel] : null;
 
@@ -90,6 +95,7 @@ public sealed class PlumeSource : IVolumeSource {
 
         var transforms = _world.Store<Transform>();
         var flights = _world.Store<FlightState>();
+        var masses = _world.Store<CraftMass>();
 
         Count = 0;
 
@@ -112,6 +118,16 @@ public sealed class PlumeSource : IVolumeSource {
             var axis = -double3.NormalizeOrZero(craft.Rotation * engine.ThrustDirection);
             var plume = Describe(engine, part.Definition, style, _origin.ToLocal(exit), SpaceMath.ToFloat(axis), (float)flight.Ambient.Pressure);
 
+            if (engine.Definition.Cluster is { } cluster) {
+
+                var right = craft.Rotation * (part.LocalRotation * double3.UnitX);
+                var across = double3.Normalize(right - axis * double3.Dot(right, axis));
+                // A plume intersects its cone directly, leaving these coordinates free for the nozzle ring.
+                plume.Position = new float4(SpaceMath.ToFloat(across * cluster.RingRadius), plume.Position.W);
+                plume.Kind.W = cluster.Center ? cluster.RingCount : -cluster.RingCount;
+
+            }
+
             if (!volumes.Add(plume)) {
 
                 continue;
@@ -128,11 +144,13 @@ public sealed class PlumeSource : IVolumeSource {
 
             _lights.Add(plume.Params0.XYZ + plume.Axis.XYZ * (length * 0.15f), exitRadius * 2, luminance * (length * 0.3f * 2 * exitRadius));
 
-            AddSteam(volumes, flight, craft.Position, exit, axis, exitRadius, length, (float)engine.Pump);
+            var centerOfMass = craft.Position + craft.Rotation * masses.Get(part.Craft).CenterOfMass;
+            AddSteam(volumes, row.Entity, flight, centerOfMass, exit, axis, exitRadius, length, (float)engine.Pump);
 
         }
 
         AddPuffs(volumes, transforms);
+        _steam.Collect(volumes, UniversalTime);
 
     }
 
@@ -186,7 +204,7 @@ public sealed class PlumeSource : IVolumeSource {
     }
 
     // Where the exhaust strikes the ground it throws up a cloud of steam and dust, lit by the plume.
-    private void AddSteam(VolumeList volumes, in FlightState flight, double3 craftPosition, double3 exit, double3 axis, float exitRadius, float length, float throttle) {
+    private void AddSteam(VolumeList volumes, Entity engine, in FlightState flight, double3 centerOfMass, double3 exit, double3 axis, float exitRadius, float length, float throttle) {
 
         if (flight.Gravity == double3.Zero) {
 
@@ -196,26 +214,27 @@ public sealed class PlumeSource : IVolumeSource {
 
         var up = -double3.Normalize(flight.Gravity);
         var down = -double3.Dot(axis, up);
-        var height = flight.SurfaceAltitude + double3.Dot(exit - craftPosition, up);
+        var height = flight.SurfaceAltitude + double3.Dot(exit - centerOfMass, up);
 
-        if (down < 0.3 || height <= 0 || height > length * 0.8) {
+        if (down < 0.3 || height < -1 || height > length * 0.8) {
 
             return;
 
         }
 
         var impact = exit + axis * (height / down);
-        var radius = exitRadius * (4 + 10 * (1 - (float)(height / length))) * throttle;
-        var center = impact + up * (radius * 0.4);
+        var coupling = Math.Clamp(1 - (float)(height / (length * 0.8)), 0, 1);
+        var air = Math.Clamp((float)flight.Ambient.Pressure / 6000, 0, 1);
+        _steam.Emit(engine, flight.Body, impact, exitRadius, coupling * throttle * air, UniversalTime);
+        var radius = exitRadius * (8 + 15 * coupling) * MathF.Sqrt(throttle);
 
         volumes.Add(new VolumePrimitive {
 
-            Kind = new int4((int)VolumeKind.NoiseSphere, 32, 4, 0),
-            Position = new float4(_origin.ToLocal(center), radius),
+            Kind = new int4((int)VolumeKind.GroundOutflow, 32, 4, 0),
+            Position = new float4(_origin.ToLocal(impact), radius),
             Axis = new float4(SpaceMath.ToFloat(up), 0),
-            Medium = new float4(0.8f, 0.78f, 0.75f, 0.12f),
+            Medium = new float4(0.92f, 0.91f, 0.88f, (0.04f + 0.31f * air) * coupling * throttle),
             Emission = new float4(0, 0, 0, 0.3f),
-            Params0 = new float4(radius * 0.6f, 0.37f, 0.11f, 0.73f),
 
         });
 
@@ -227,6 +246,12 @@ public sealed class PlumeSource : IVolumeSource {
         var throttle = (float)Math.Clamp(engine.Pump, 0, 1);
 
         var exitRadius = (float)Math.Min(Math.Sqrt(Math.Max(definition.ExitArea, 1e-4) / Math.PI), part.Radius * 0.95);
+
+        if (definition.Cluster is { } cluster) {
+
+            exitRadius = (float)(cluster.RingRadius + cluster.Diameter * 0.5);
+
+        }
 
         // Nozzles designed for sea level exhaust near ambient pressure; vacuum nozzles expand far further.
         var isp = (float)(definition.SeaLevelIsp / Math.Max(definition.VacuumIsp, 1));
@@ -256,7 +281,7 @@ public sealed class PlumeSource : IVolumeSource {
             Medium = new float4((float)style.Albedo[0], (float)style.Albedo[1], (float)style.Albedo[2], (float)style.Soot * throttle / exitRadius),
             Emission = new float4(emission, 0.3f),
             Params0 = new float4(exit, exitRadius),
-            Params1 = new float4(spread, diamondSpacing, diamonds, 0),
+            Params1 = new float4(spread, diamondSpacing, diamonds, thin),
             Params2 = new float4((float)style.Sheath[0], (float)style.Sheath[1], (float)style.Sheath[2], (float)style.CoreWhiteness),
 
         };

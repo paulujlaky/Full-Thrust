@@ -25,6 +25,7 @@ public sealed class TerrainQuadtree {
     private readonly TerrainNode[] _selected;
 
     private int _requestBudget;
+    private double _splitThreshold;
 
     public TerrainQuadtree(ITerrain terrain, double radius, int quadsPerEdge, int capacity = 4096, double finestSpacing = 1.5) {
 
@@ -51,12 +52,13 @@ public sealed class TerrainQuadtree {
     public int DeepestLevel { get; private set; }
 
     // Camera in the body-fixed frame, metres from the body centre.
-    public void Update(double3 camera, ITerrainChunkSource source) {
+    public void Update(double3 camera, ITerrainChunkSource source, double detailScale = 1) {
 
         Count = 0;
         Culled = 0;
         DeepestLevel = 0;
         _requestBudget = MaxRequestsPerUpdate;
+        _splitThreshold = SplitDistance * detailScale;
 
         for (var face = 0; face < 6; face++) {
 
@@ -93,7 +95,7 @@ public sealed class TerrainQuadtree {
 
         var distance = Math.Max(0, (camera - bounds.Center).Length() - bounds.Radius);
 
-        if (node.Level < MaxLevel && distance < SplitDistance * edge && ChildrenReady(node, source)) {
+        if (node.Level < MaxLevel && distance < _splitThreshold * edge && ChildrenReady(node, source)) {
 
             for (var i = 0; i < 4; i++) {
 

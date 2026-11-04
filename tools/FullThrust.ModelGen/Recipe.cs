@@ -58,6 +58,8 @@ public sealed class Recipe {
 
     public double CropMaxY { get; set; } = double.PositiveInfinity;
 
+    public bool CloseHeatShield { get; set; }
+
     public int RingEngines { get; set; }
 
     public bool CenterEngine { get; set; }
@@ -67,6 +69,8 @@ public sealed class Recipe {
     public double EngineDiameter { get; set; }
 
     public double EngineLength { get; set; }
+
+    public bool VacuumExtension { get; set; }
 
     public int Seed { get; set; } = 1;
 

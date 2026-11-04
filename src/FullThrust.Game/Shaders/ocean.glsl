@@ -24,6 +24,14 @@ struct OceanSurface {
 
 OceanSurface Ocean(vec3 position, vec3 up, float time, float metresPerPixel) {
 
+    if (metresPerPixel >= 28.0) {
+
+        float variance = float(WaveCount) * 0.5 * WaveSteepness * WaveSteepness + 0.004;
+
+        return OceanSurface(up, pow(0.04 * 0.04 + variance, 0.25));
+
+    }
+
     vec3 slope = vec3(0.0);
     float lostVariance = 0.0;
     float wavelength = 80.0;

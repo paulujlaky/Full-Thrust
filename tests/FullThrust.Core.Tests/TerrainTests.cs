@@ -189,10 +189,10 @@ public class TerrainTests {
 
                 }
 
-                Assert.Equal(1.0f, sum, 4);
-                Assert.Equal(surface.X, color.X, 4);
-                Assert.Equal(surface.Y, color.Y, 4);
-                Assert.Equal(surface.Z, color.Z, 4);
+                Assert.Equal(1.0f, sum, 1e-6f);
+                Assert.Equal(surface.X, color.X, 1e-6f);
+                Assert.Equal(surface.Y, color.Y, 1e-6f);
+                Assert.Equal(surface.Z, color.Z, 1e-6f);
 
             }
 

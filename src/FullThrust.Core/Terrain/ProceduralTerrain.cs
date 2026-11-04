@@ -254,7 +254,15 @@ public sealed class ProceduralTerrain : ITerrain {
 
                 }
 
-                feature = Math.Max(feature, fresh * (1 - SmoothStep(0.85, 2.0, distance)));
+                var normal = surface / _radius;
+                var tangent = double3.Normalize(double3.Cross(Math.Abs(normal.Y) < 0.9 ? double3.UnitY : double3.UnitX, normal));
+                var delta = point - surface;
+                var angle = Math.Atan2(double3.Dot(delta, double3.Cross(normal, tangent)), double3.Dot(delta, tangent));
+                var rays = Math.Pow(0.5 + 0.5 * Math.Cos(angle * 9 + 2.4 * Math.Sin(angle * 3 + fresh * 17)), 4);
+                var walls = SmoothStep(0.45, 0.98, distance) * (1 - SmoothStep(1.0, 1.35, distance));
+                var blanket = (0.15 + 0.85 * rays) * SmoothStep(0.82, 1.05, distance) * (1 - SmoothStep(1.0, 2, distance));
+
+                feature = Math.Max(feature, fresh * (0.2 * (1 - SmoothStep(0.5, 1.0, distance)) + 0.72 * walls + blanket));
 
             }
 

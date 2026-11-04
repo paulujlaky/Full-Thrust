@@ -27,7 +27,7 @@ public sealed class CloudSource : IVolumeSource, IFrameUniformsWriter {
 
         _system = system;
         _origin = origin;
-        _layers = new VolumePrimitive[system.Count];
+        _layers = new VolumePrimitive[system.Count * 2];
 
     }
 
@@ -89,6 +89,19 @@ public sealed class CloudSource : IVolumeSource, IFrameUniformsWriter {
 
             _layers[_count++] = primitive;
 
+            if (clouds.CirrusAltitude > clouds.BaseAltitude + clouds.Thickness && primitive.Params1.Y > 0) {
+
+                var cirrus = primitive;
+                cirrus.Kind = new int4((int)VolumeKind.Cirrus, 3, 0, 0);
+                cirrus.Params0.W = (float)(body.Radius + clouds.CirrusAltitude);
+                cirrus.Params1.X = cirrus.Params0.W + 650;
+                cirrus.Position.W = cirrus.Params1.X;
+                cirrus.Medium.W = 0.00055f;
+                cirrus.Emission.W = 0.62f;
+                _layers[_count++] = cirrus;
+
+            }
+
             if (distance < _nearestDistance) {
 
                 _nearest = primitive;
@@ -117,10 +130,9 @@ public sealed class CloudSource : IVolumeSource, IFrameUniformsWriter {
         var outer = (float)(body.Radius + clouds.BaseAltitude + clouds.Thickness);
 
         // World to body-fixed, so the weather map turns with the ground below it.
-        var turn = body.RotationAt(_time);
-        var rotation = new doubleQuat(-turn.X, -turn.Y, -turn.Z, turn.W);
-
         var drift = clouds.WindSpeed * _time;
+        var turn = body.RotationAt(_time) * doubleQuat.CreateFromAxisAngle(double3.UnitY, drift / body.Radius);
+        var rotation = new doubleQuat(-turn.X, -turn.Y, -turn.Z, turn.W);
 
         return new VolumePrimitive {
 

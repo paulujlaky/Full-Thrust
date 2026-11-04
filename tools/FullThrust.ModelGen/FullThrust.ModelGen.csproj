@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FullThrust.Assets\FullThrust.Assets.csproj" />
+    <ProjectReference Include="..\..\src\FullThrust.Core\FullThrust.Core.csproj" />
   </ItemGroup>
 
 </Project>

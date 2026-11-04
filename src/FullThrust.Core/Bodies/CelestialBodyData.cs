@@ -100,6 +100,8 @@ public sealed class CloudData {
 
     public double WindSpeed { get; set; } = 8;
 
+    public double CirrusAltitude { get; set; }
+
 }
 
 // Coefficients per metre at sea level, after Hillaire 2020 for Earth.

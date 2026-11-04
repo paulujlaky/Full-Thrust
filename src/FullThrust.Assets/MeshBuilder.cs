@@ -47,6 +47,24 @@ public sealed class MeshBuilder {
 
     }
 
+    public void Quad(float3 center, float3 right, float3 up, int material) {
+
+        Quad(center - right - up, center + right - up, center + right + up, center - right + up, material, 1, 0);
+
+    }
+
+    public void Quad(float3 a, float3 b, float3 c, float3 d, int material, float v0, float v1) {
+
+        var normal = float3.NormalizeOrZero(float3.Cross(b - a, d - a));
+        var start = (uint)_vertices.Count;
+        _vertices.Add(new MeshVertex(a, normal, new float2(0, v0)));
+        _vertices.Add(new MeshVertex(b, normal, new float2(1, v0)));
+        _vertices.Add(new MeshVertex(c, normal, new float2(1, v1)));
+        _vertices.Add(new MeshVertex(d, normal, new float2(0, v1)));
+        Indices(material).AddRange([start, start + 1, start + 2, start, start + 2, start + 3]);
+
+    }
+
     // Revolves an (r, y) profile about +Y. Profiles run bottom to top so normals face outwards.
     public void Lathe(ReadOnlySpan<float2> profile, int material, LatheOptions options, float4x4? transform = null) {
 

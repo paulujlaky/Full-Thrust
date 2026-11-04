@@ -1,0 +1,59 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 8) uniform sampler3D noise;
+layout(set = 1, binding = 0, rgba8) uniform writeonly image2D target;
+
+const float Pi = 3.14159265;
+
+void main() {
+
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(imageSize(target));
+    float latitude = (uv.y - 0.5) * Pi;
+    float longitude = (uv.x - 0.5) * (2.0 * Pi);
+    vec3 p = vec3(cos(latitude) * cos(longitude), sin(latitude), cos(latitude) * sin(longitude));
+    vec3 wind = textureLod(noise, p * 0.47 + 0.71, 0).gba - 0.5;
+    vec3 air = normalize(p + 0.16 * wind);
+    float fronts = 0.0;
+    float ice = 0.0;
+
+    // Local rotations bend only the air around each low; distant fronts keep their own headings.
+    for (int i = 0; i < 23; i++) {
+
+        float seed = float(i) + 1.0;
+        float y = 1.0 - 2.0 * (float(i) + 0.5) / 23.0;
+        float az = seed * 2.399963 + 0.16 * sin(seed * 19.7);
+        vec3 east = vec3(-sin(az), 0.0, cos(az));
+        vec3 centre = vec3(cos(az) * sqrt(1.0 - y * y), y, sin(az) * sqrt(1.0 - y * y));
+        vec3 north = cross(east, centre);
+        float radius = 0.23 + 0.16 * fract(seed * 0.618);
+        vec2 local = vec2(dot(air, east), dot(air, north)) / radius;
+        float range = length(local);
+
+        if (dot(centre, air) < 0.80 || range >= 1.65) {
+
+            continue;
+
+        }
+
+        float turn = sign(y + 0.01) * (0.8 + 4.7 * exp(-2.1 * range * range)) + seed * 1.73;
+        local = mat2(cos(turn), sin(turn), -sin(turn), cos(turn)) * local;
+        float trail = local.y - 0.33 * local.x * local.x + 0.12;
+        float across = 0.06 + 0.13 * smoothstep(-0.8, 0.3, local.x);
+        float taper = smoothstep(-1.6, -0.63, local.x) * (1.0 - smoothstep(0.30, 0.92, local.x));
+        float strength = 0.55 + 0.45 * fract(seed * 0.75488);
+        vec3 weatherCoord = vec3(local.x * 1.1, local.y * 2.9, seed * 0.19);
+        vec4 lanes = textureLod(noise, weatherCoord + 0.18 * wind, 0);
+        float breaks = 0.20 + 0.85 * smoothstep(0.30, 0.70, lanes.g);
+        fronts = max(fronts, strength * breaks * taper * exp(-trail * trail / (across * across)));
+        ice = max(ice, taper * exp(-pow((trail - 0.18) / (across + 0.18), 2.0)));
+
+    }
+
+    float humid = 0.68 * textureLod(noise, air * 1.18 + 0.31, 0).g + 0.32 * textureLod(noise, air * 3.72, 0).g;
+    float belt = exp(-pow((latitude - 0.11 * sin(longitude * 2.0) - wind.x * 0.32) / 0.21, 2.0));
+    float cells = smoothstep(0.34, 0.72, humid);
+    imageStore(target, pixel, vec4(fronts, cells, belt, ice));
+
+}

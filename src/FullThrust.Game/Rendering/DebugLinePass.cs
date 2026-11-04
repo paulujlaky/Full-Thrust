@@ -38,7 +38,7 @@ public sealed class DebugLinePass : IRenderPass {
 
         _layout = device.CreatePipelineLayout([], [
 
-            new VkPushConstantRange { StageFlags = VkShaderStageFlags.VertexBit, Offset = ByteSize.Zero, Size = ByteSize.Of<Brutal.Numerics.float4x4>() },
+            new VkPushConstantRange { StageFlags = VkShaderStageFlags.VertexBit, Offset = ByteSize.Zero, Size = (ByteSize32)72 },
 
         ], null);
 
@@ -60,7 +60,7 @@ public sealed class DebugLinePass : IRenderPass {
 
     public string Name => "Debug Lines";
 
-    public RenderStage Stage => RenderStage.Opaque;
+    public RenderStage Stage => RenderStage.Transparent;
 
     public bool Enabled { get; set; } = true;
 
@@ -81,7 +81,8 @@ public sealed class DebugLinePass : IRenderPass {
         cmd.BindPipeline(VkPipelineBindPoint.Graphics, _pipeline);
         cmd.BindVertexBuffer(0, _buffers[frame.FrameIndex].VkBuffer);
         cmd.PushConstants(_layout, VkShaderStageFlags.VertexBit, ByteSize.Zero, frame.View * frame.Projection);
-        cmd.Draw(vertices.Length, 1, 0, 0);
+        cmd.PushConstants(_layout, VkShaderStageFlags.VertexBit, ByteSize.Of<Brutal.Numerics.float4x4>(), new Brutal.Numerics.float2(frame.Extent.Width, frame.Extent.Height));
+        cmd.Draw(6, vertices.Length / 2, 0, 0);
 
     }
 
@@ -92,7 +93,37 @@ public sealed class DebugLinePass : IRenderPass {
         stages[0] = Presets.ShaderStage.Vertex(vertexShader);
         stages[1] = Presets.ShaderStage.Fragment(fragmentShader);
 
-        var vertexInput = VertexInput.For<LineVertex>();
+        var binding = new VkVertexInputBindingDescription {
+
+            Binding = 0,
+            Stride = ByteSize.Of<LineVertex>(2),
+            InputRate = VkVertexInputRate.Instance,
+
+        };
+
+        var attributes = stackalloc VkVertexInputAttributeDescription[4];
+
+        for (var i = 0; i < 4; i++) {
+
+            attributes[i] = new VkVertexInputAttributeDescription {
+
+                Binding = 0,
+                Location = i,
+                Format = i % 2 == 0 ? VkFormat.R32G32B32SFloat : VkFormat.R32G32B32A32SFloat,
+                Offset = (ByteSize32)((i / 2) * 28 + (i % 2) * 12),
+
+            };
+
+        }
+
+        var vertexInput = new VkPipelineVertexInputStateCreateInfo {
+
+            VertexBindingDescriptionCount = 1,
+            VertexBindingDescriptions = &binding,
+            VertexAttributeDescriptionCount = 4,
+            VertexAttributeDescriptions = attributes,
+
+        };
 
         var viewport = new VkPipelineViewportStateCreateInfo { ViewportCount = 1, ScissorCount = 1 };
 
@@ -111,12 +142,12 @@ public sealed class DebugLinePass : IRenderPass {
 
         };
 
-        return _device.CreateGraphicsPipeline(default, new VkGraphicsPipelineCreateInfo {
+        var pipeline = _device.CreateGraphicsPipeline(default, new VkGraphicsPipelineCreateInfo {
 
             StageCount = 2,
             Stages = stages,
-            VertexInputState = vertexInput,
-            InputAssemblyState = Presets.InputAssembly.LineList,
+            VertexInputState = &vertexInput,
+            InputAssemblyState = Presets.InputAssembly.TriangleList,
             ViewportState = &viewport,
             RasterizationState = Presets.Rasterization.Fill.CullNone,
             MultisampleState = Presets.Multisample.None,
@@ -128,6 +159,10 @@ public sealed class DebugLinePass : IRenderPass {
             Subpass = 0,
 
         }, null);
+
+
+
+        return pipeline;
 
     }
 

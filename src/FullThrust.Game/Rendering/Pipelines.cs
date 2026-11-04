@@ -22,13 +22,14 @@ public unsafe struct PipelineDesc {
     public string? FragmentShader;
 
     // Null draws without vertex buffers, e.g. a fullscreen triangle.
-    public VkPipelineVertexInputStateCreateInfo* VertexInput;
+    public VertexInput? VertexInput;
 
     public VkPipelineInputAssemblyStateCreateInfo* InputAssembly;
     public VkCullModeFlags Cull;
     public VkPipelineColorBlendStateCreateInfo* Blend;
 
     public DepthMode Depth;
+    public bool DepthOnly;
 
     // Shadow casters: depth bias is set per pass, and geometry outside the depth range is clamped rather than clipped.
     public bool ShadowCaster;
@@ -98,7 +99,7 @@ public static class Pipelines {
                 RasterizationState = &rasterization,
                 MultisampleState = Presets.Multisample.None,
                 DepthStencilState = &depth,
-                ColorBlendState = desc.FragmentShader is null ? &noColor : desc.Blend is null ? Presets.BlendState.BlendNone : desc.Blend,
+                ColorBlendState = desc.DepthOnly || desc.FragmentShader is null ? &noColor : desc.Blend is null ? Presets.BlendState.BlendNone : desc.Blend,
                 DynamicState = &dynamic,
                 Layout = desc.Layout,
                 RenderPass = desc.RenderPass,
@@ -108,6 +109,8 @@ public static class Pipelines {
 
         } finally {
 
+            // The layout owns native descriptions the driver reads until pipeline creation returns.
+            GC.KeepAlive(desc.VertexInput);
             device.DestroyShaderModule(vertexShader, null);
 
             if (desc.FragmentShader is not null) {

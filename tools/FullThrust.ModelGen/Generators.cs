@@ -1,5 +1,6 @@
 using Brutal.Numerics;
 using FullThrust.Assets;
+using FullThrust.Core.Rendering;
 
 namespace FullThrust.ModelGen;
 
@@ -15,10 +16,13 @@ public static class Generators {
             "tank" => Tank(recipe),
             "pod" => Pod(recipe),
             "ring" => Ring(recipe),
+            "shroud" => Shroud(recipe),
             "rcs" => Rcs(recipe),
+            "cooled-engine" => CooledEngine(recipe),
             "cluster" => Cluster(recipe, modelsRoot),
             "crop" => Crop(recipe, modelsRoot),
             "launchpad" => LaunchPad(recipe),
+            "grove" => CoastalGrove.Build(recipe),
             _ => throw new InvalidDataException($"{recipe.Output}: unknown recipe type '{recipe.Type}'."),
 
         };
@@ -68,8 +72,21 @@ public static class Generators {
 
                     break;
 
+                case "tracking":
+                    var markX = ((u * 4) % 1 - 0.5f) * circumference / 4;
+                    var markY = (v - 0.32f) * tileMetres;
+
+                    if (MathF.Max(MathF.Abs(markX), MathF.Abs(markY)) < 0.29f && (markX < 0) == (markY < 0)) {
+
+                        color = accent;
+                        roughness = 0.55f;
+
+                    }
+
+                    break;
+
                 case "corrugated":
-                    height += 0.012f * MathF.Sin(u * MathF.Tau * circumference / 0.25f);
+                    height += 0.012f * MathF.Sin(u * MathF.Tau * MathF.Round(circumference / 0.25f));
                     break;
 
             }
@@ -135,6 +152,24 @@ public static class Generators {
 
             mesh.Box(new float3(-width / 2, y0 + length * 0.04f, -radius - depth), new float3(width / 2, -y0 - length * 0.04f, -radius + 0.02f), paint, float4x4.CreateRotationY(MathF.PI / 2), circumference);
 
+            for (var station = y0 + length * 0.06f; station < -y0 - length * 0.04f; station += 2.4f) {
+
+                mesh.Box(new float3(-width * 0.65f, station, -radius - depth - 0.014f), new float3(width * 0.65f, station + 0.055f, -radius + 0.02f), metal, float4x4.CreateRotationY(MathF.PI / 2));
+
+            }
+
+            for (var side = 0; side < 3; side++) {
+
+                var angle = side * MathF.Tau / 3;
+                var height = y0 + length * 0.17f;
+                var mount = float4x4.CreateRotationZ(-MathF.PI / 2) * float4x4.CreateTranslation(radius - 0.032f, height, 0) * float4x4.CreateRotationY(angle);
+                var port = MathF.Min(radius * 0.18f, 0.32f);
+
+                mesh.Cylinder(port, 0, 0.075f, metal, 32, mount);
+                mesh.Cylinder(port * 0.77f, 0.075f, 0.082f, dark, 32, mount);
+
+            }
+
         }
 
         return mesh.Build(recipe.Output);
@@ -174,6 +209,25 @@ public static class Generators {
 
     }
 
+    private static ModelData Shroud(Recipe recipe) {
+
+        var mesh = new MeshBuilder();
+        var skin = mesh.AddMaterial(Skin(mesh, "fluted_shell", recipe, MathF.PI, 1, recipe.PaintColor, recipe.AccentColor));
+        var liner = mesh.AddMaterial(Material("inner_liner", new float3(0.17f, 0.16f, 0.14f), 0.70f, 0.56f));
+        var options = LatheOptions.Default with {
+
+            Segments = 96,
+            SmoothAngleDeg = 12,
+
+        };
+
+        mesh.Lathe([new(0.495f, -0.5f), new(0.5f, -0.48f), new(0.5f, 0.47f), new(0.49f, 0.5f)], skin, options);
+        mesh.Lathe([new(0.49f, 0.5f), new(0.48f, 0.5f), new(0.48f, -0.5f), new(0.495f, -0.5f)], liner, options);
+
+        return mesh.Build(recipe.Output);
+
+    }
+
     private static ModelData Pod(Recipe recipe) {
 
         var mesh = new MeshBuilder();
@@ -186,34 +240,54 @@ public static class Generators {
         var y0 = -length / 2;
         var y1 = length / 2;
 
-        var bodyBottom = y0 + shield + 0.06f;
+        var bodyBottom = shield == 0 ? y0 : y0 + shield + 0.06f;
+        var baseRadius = shield == 0 ? radius : radius * 0.985f;
         var bodyTop = y1 - MathF.Max(nose, tunnel);
-        var slant = float2.Distance(new float2(radius * 0.985f, bodyBottom), new float2(top, bodyTop));
+        var slant = float2.Distance(new float2(baseRadius, bodyBottom), new float2(top, bodyTop));
 
         var body = mesh.AddMaterial(PodSkin(mesh, recipe, MathF.Tau * radius, slant));
-        var heat = mesh.AddMaterial(Material("heatshield", new float3(0.11f, 0.085f, 0.07f), 0, 0.88f));
+        var cap = mesh.AddMaterial(Material("forward_cover", recipe.PaintColor * 0.89f, (float)recipe.PaintMetallic, 0.46f));
+        var heat = mesh.AddMaterial(Ablator(mesh, recipe.Seed, radius));
         var metal = mesh.AddMaterial(Material("metal", new float3(0.7f), 1, 0.35f));
 
         var options = LatheOptions.Default with { Segments = 96, VMetres = slant, SmoothAngleDeg = 25 };
 
-        mesh.Lathe([new(0, y0), new(radius * 0.55f, y0 + shield * 0.18f), new(radius * 0.88f, y0 + shield * 0.55f), new(radius, y0 + shield), new(radius * 0.985f, bodyBottom)], heat, options with { SmoothAngleDeg = 40 });
-        mesh.Lathe([new(radius * 0.985f, bodyBottom), new(top, bodyTop)], body, options);
+        float2[] shieldProfile = shield == 0
+            ? [new(0, y0), new(radius, y0)]
+            : [new(0, y0), new(radius * 0.55f, y0 + shield * 0.18f), new(radius * 0.88f, y0 + shield * 0.55f), new(radius, y0 + shield), new(baseRadius, bodyBottom)];
+        mesh.Lathe(shieldProfile, heat, options with {
+
+            SmoothAngleDeg = 40,
+            VMetres = radius * 1.17f,
+
+        });
+        mesh.Lathe([new(baseRadius, bodyBottom), new(top, bodyTop)], body, options);
 
         if (recipe.DockingTunnel) {
 
             var tunnelRadius = MathF.Min(top * 0.8f, 0.5f);
 
-            mesh.Lathe([new(top, bodyTop), new(tunnelRadius, bodyTop)], body, options with { SmoothAngleDeg = 1 });
+            mesh.Lathe([new(top, bodyTop), new(tunnelRadius, bodyTop)], cap, options with { SmoothAngleDeg = 1 });
             mesh.Lathe([new(tunnelRadius, bodyTop), new(tunnelRadius, y1 - 0.12f), new(tunnelRadius * 0.85f, y1 - 0.08f), new(0.12f, y1 - 0.08f)], metal, options with { SmoothAngleDeg = 35 });
             mesh.Lathe([new(0.12f, y1 - 0.08f), new(0.03f, y1), new(0, y1)], metal, options);
 
         } else if (nose > 0) {
 
-            mesh.Lathe([new(top, bodyTop), new(top * 0.92f, bodyTop + nose * 0.45f), new(top * 0.62f, bodyTop + nose * 0.85f), new(0, y1)], body, options with { SmoothAngleDeg = 60 });
+            var cover = new float2[13];
+
+            for (var ring = 0; ring < cover.Length; ring++) {
+
+                var angle = ring * (MathF.PI * 0.5f) / (cover.Length - 1);
+
+                cover[ring] = new float2(top * MathF.Cos(angle), bodyTop + nose * MathF.Sin(angle));
+
+            }
+
+            mesh.Lathe(cover, cap, options);
 
         } else {
 
-            mesh.Lathe([new(top, bodyTop), new(0, bodyTop)], body, options);
+            mesh.Lathe([new(top, bodyTop), new(0, bodyTop)], cap, options);
 
         }
 
@@ -224,7 +298,7 @@ public static class Generators {
     // Capsule sidewall with windows and panel lines; V spans the slant height exactly once.
     private static MaterialData PodSkin(MeshBuilder mesh, Recipe recipe, float circumference, float slant) {
 
-        var texture = new TextureBuilder(SkinSize, SkinSize);
+        var texture = new TextureBuilder(1024, SkinSize);
         var paint = recipe.PaintColor;
         var windows = recipe.Windows;
 
@@ -232,7 +306,8 @@ public static class Generators {
 
             var height = 1 - v;
             var grime = Noise.Fbm(u, v, 6, 4, recipe.Seed);
-            var color = paint * (0.94f + 0.08f * grime);
+            var panel = Noise.Hash((int)(u * 12), (int)(height * 4), 12, recipe.Seed);
+            var color = paint * (0.81f + 0.09f * panel + 0.13f * grime);
             var roughness = (float)recipe.PaintRoughness + 0.1f * (grime - 0.5f);
             var metallic = (float)recipe.PaintMetallic;
             var relief = 0f;
@@ -249,7 +324,55 @@ public static class Generators {
                 var centre = (w + 0.5f) / windows;
                 var du = (u - centre) * circumference;
                 var dv = (height - 0.62f) * slant;
-                var d = RoundedBox(du, dv, 0.16f, 0.2f, 0.06f);
+                var d = RoundedBox(du, dv, 0.28f + 0.08f * dv, 0.21f, 0.07f);
+
+                if (w % 2 == 0) {
+
+                    var hatch = RoundedBox(du, dv + 0.19f, 0.53f, 0.63f, 0.17f);
+                    var gasket = Math.Clamp(1 - MathF.Abs(hatch) / 0.024f, 0, 1);
+
+                    color *= (hatch < 0 ? 0.90f : 1) * (1 - 0.82f * gasket);
+                    relief += (hatch < 0 ? 0.006f : 0) - 0.005f * gasket;
+
+                    if (MathF.Abs(du - 0.46f) < 0.045f && MathF.Abs(dv + 0.23f) < 0.12f) {
+
+                        color = new float3(0.57f, 0.055f, 0.018f);
+                        metallic = 0.20f;
+                        relief += 0.018f;
+
+                    }
+
+                    var labelX = du - 0.61f;
+                    var labelY = -0.23f - dv;
+
+                    if (labelX >= 0 && labelX < 0.78f && MathF.Abs(labelY) < MathF.Min(0.094f, labelX * 0.70f)) {
+
+                        color = RescueInk(labelX, labelY) ? new float3(0.018f) : new float3(0.90f, 0.58f, 0.075f);
+                        metallic = 0;
+                        roughness = 0.54f;
+
+                    }
+
+                    var hingeDistance = MathF.Min(MathF.Abs(dv - 0.09f), MathF.Abs(dv + 0.47f));
+                    if (MathF.Abs(du + 0.52f) < 0.045f && hingeDistance < 0.076f) {
+
+                        color = new float3(0.34f, 0.36f, 0.37f);
+                        metallic = 0.82f;
+                        roughness = 0.42f;
+                        relief += 0.014f;
+
+                    }
+
+                }
+
+                if (d < 0.075f) {
+
+                    color = new float3(0.44f, 0.46f, 0.48f);
+                    roughness = 0.35f;
+                    metallic = 0.85f;
+                    relief += 0.014f;
+
+                }
 
                 if (d < 0.03f) {
 
@@ -261,9 +384,9 @@ public static class Generators {
 
                 if (d < 0) {
 
-                    color = new float3(0.015f, 0.02f, 0.03f);
-                    metallic = 0;
-                    roughness = 0.04f;
+                    color = new float3(0.026f, 0.044f, 0.065f);
+                    metallic = 0.25f;
+                    roughness = 0.09f;
                     relief -= 0.004f;
 
                 }
@@ -281,7 +404,56 @@ public static class Generators {
 
         material.BaseColorTexture = mesh.AddTexture(texture.BaseColor("capsule_basecolor"));
         material.MetallicRoughnessTexture = mesh.AddTexture(texture.MetallicRoughness("capsule_orm"));
-        material.NormalTexture = mesh.AddTexture(texture.Normal("capsule_normal", circumference / SkinSize, slant / SkinSize));
+        material.NormalTexture = mesh.AddTexture(texture.Normal("capsule_normal", circumference / texture.Width, slant / texture.Height));
+
+        return material;
+
+    }
+
+    private static readonly string[] RescueStencil = [
+
+        "####..#####..####..####.#...#.#####",
+        "#...#.#.....#.....#.....#...#.#....",
+        "#...#.#.....#.....#.....#...#.#....",
+        "####..####...###..#.....#...#.####.",
+        "#.#...#.........#.#.....#...#.#....",
+        "#..#..#.........#.#.....#...#.#....",
+        "#...#.#####.####...####..###..#####",
+
+    ];
+
+    private static bool RescueInk(float x, float y) {
+
+        var col = (int)MathF.Floor((x - 0.15f) / 0.0175f);
+        var row = (int)MathF.Floor((y + 0.063f) / 0.018f);
+
+        return (uint)row < RescueStencil.Length && (uint)col < RescueStencil[row].Length && RescueStencil[row][col] == '#';
+
+    }
+
+    private static MaterialData Ablator(MeshBuilder mesh, int seed, float radius) {
+
+        var texture = new TextureBuilder(512, 192);
+        texture.Paint((u, v, texel) => {
+
+            var radial = 1 - v;
+            var theta = u * MathF.Tau;
+            var x = MathF.Cos(theta) * radial;
+            var y = MathF.Sin(theta) * radial;
+            var resin = Noise.Fbm(x, y, 5, 5, seed + 19);
+            var grain = Noise.Fbm(x, y, 53, 3, seed + 31);
+            var flow = Noise.Fbm(u, radial * 0.16f, 42, 3, seed + 7);
+            var charred = Math.Clamp(0.3f + 0.45f * radial + 0.80f * (flow - 0.5f) * radial + 0.45f * (resin - 0.5f), 0, 1);
+            texel.Color = float3.Lerp(new float3(0.23f, 0.13f, 0.062f), new float3(0.037f, 0.032f, 0.029f), charred);
+            texel.Color *= 0.70f + grain * 0.58f;
+            texel.Roughness = 0.78f + 0.19f * grain;
+            texel.Height = (grain - 0.5f) * 0.003f + flow * radial * 0.004f;
+
+        });
+        var material = Material("phenolic_ablator", new float3(1), 0, 1);
+        material.BaseColorTexture = mesh.AddTexture(texture.BaseColor("ablator_basecolor"));
+        material.NormalTexture = mesh.AddTexture(texture.Normal("ablator_normal", MathF.Tau * radius / texture.Width, radius / texture.Height));
+        material.MetallicRoughnessTexture = mesh.AddTexture(texture.MetallicRoughness("ablator_orm"));
 
         return material;
 
@@ -415,6 +587,77 @@ public static class Generators {
 
     }
 
+    private static ModelData CooledEngine(Recipe recipe) {
+
+        var mesh = new MeshBuilder();
+        var radius = (float)recipe.EngineDiameter * 0.5f;
+        var length = (float)recipe.EngineLength;
+        var top = length * 0.5f;
+        var vacuum = recipe.VacuumExtension;
+        var bellHeight = length * (vacuum ? 0.72f : 0.49f);
+        var chamber = bellHeight - top;
+        var throat = vacuum ? 0.11f : 0.28f;
+        var shell = mesh.AddMaterial(Material("nozzle jacket", new float3(0.28f, 0.24f, 0.21f), 0.8f, 0.4f));
+        var liner = mesh.AddMaterial(Material("fired liner", new float3(0.085f, 0.065f, 0.055f), 0.45f, 0.76f));
+        var manifold = mesh.AddMaterial(Material("coolant manifolds", new float3(0.44f, 0.39f, 0.33f), 0.85f, 0.32f));
+        var options = LatheOptions.Default with { Segments = 96 };
+        var profile = new float2[25];
+        var inner = new float2[profile.Length + 2];
+
+        for (var i = 0; i < profile.Length; i++) {
+
+            var t = i / (float)(profile.Length - 1);
+            var r = radius * (1 - (1 - throat) * MathF.Pow(t, vacuum ? 1.48f : 1.85f));
+            var y = -top + t * bellHeight;
+            profile[i] = new float2(r, y);
+            inner[profile.Length - i] = new float2(r - radius * 0.022f, y);
+
+            if (i < profile.Length - 1 && i % (vacuum && t < 0.65f ? 6 : 2) == 0) {
+
+                mesh.Lathe([new(r, y), new(r + radius * 0.012f, y + radius * 0.009f), new(r, y + radius * 0.025f)], manifold, options);
+
+            }
+
+        }
+
+        inner[0] = new float2(0, chamber);
+        inner[^1] = profile[0];
+        mesh.Lathe(profile, shell, options);
+        mesh.Lathe(inner, liner, options);
+
+        var head = LatheOptions.Default with { Segments = 64 };
+        var headRadius = radius * throat;
+        mesh.Lathe([new(headRadius, chamber), new(headRadius * 1.55f, chamber + length * 0.055f), new(headRadius * 1.55f, top * 0.76f), new(headRadius * 1.8f, top * 0.78f), new(headRadius * 1.8f, top * 0.82f), new(headRadius, top * 0.84f), new(headRadius, top), new(0, top)], shell, head);
+
+        var pumpRadius = headRadius * 0.85f;
+        var pumpX = headRadius * 2.55f;
+        var pump = float4x4.CreateTranslation(pumpX, 0, 0);
+        mesh.Cylinder(pumpRadius, top * 0.58f, top * 0.88f, shell, 40, pump);
+        mesh.Cylinder(pumpRadius * 1.12f, top * 0.7f, top * 0.73f, manifold, 40, pump);
+        mesh.Strut(new float3(pumpX, top * 0.8f, 0), new float3(headRadius, top * 0.8f, 0), pumpRadius * 0.48f, manifold);
+
+        var station = profile[vacuum ? 17 : 11];
+
+        for (var i = 0; i < 2; i++) {
+
+            var side = i == 0 ? -1f : 1f;
+            var inlet = new float3(pumpX, top * 0.62f, 0);
+            var elbow = new float3(pumpX, chamber + length * 0.04f, side * station.X * 0.65f);
+            var outlet = new float3(station.X * 0.6f, station.Y, side * station.X * 0.8f);
+            mesh.Strut(inlet, elbow, headRadius * 0.21f, manifold);
+            mesh.Strut(elbow, outlet, headRadius * 0.21f, manifold);
+
+            var pivot = new float3(-headRadius, top * 0.74f, side * headRadius);
+            var lug = new float3(-headRadius * 2.6f, top, side * headRadius * 1.8f);
+            var sleeveEnd = float3.Lerp(lug, pivot, 0.57f);
+            mesh.Strut(lug, sleeveEnd, headRadius * 0.28f, shell);
+            mesh.Strut(sleeveEnd, pivot, headRadius * 0.14f, manifold);
+
+        }
+
+        return mesh.Build(recipe.Output);
+
+    }
     // A thrust plate with a ring of engines (and optionally one in the centre) instanced from a source model.
     private static ModelData Cluster(Recipe recipe, string modelsRoot) {
 
@@ -471,12 +714,20 @@ public static class Generators {
 
             var transform = instance.Transform * rotation;
 
-            foreach (var vertex in source.Vertices) {
+            var mesh = source.Meshes[instance.Mesh];
 
-                var p = float3.Transform(vertex.Position, transform);
+            for (var p = mesh.FirstPrimitive; p < mesh.FirstPrimitive + mesh.PrimitiveCount; p++) {
 
-                min = float3.Min(min, p);
-                max = float3.Max(max, p);
+                var primitive = source.Primitives[p];
+
+                for (var i = primitive.FirstIndex; i < primitive.FirstIndex + primitive.IndexCount; i++) {
+
+                    var position = float3.Transform(source.Vertices[source.Indices[i]].Position, transform);
+
+                    min = float3.Min(min, position);
+                    max = float3.Max(max, position);
+
+                }
 
             }
 
@@ -577,7 +828,30 @@ public static class Generators {
 
         model.ComputeBounds();
 
-        return model;
+        if (!recipe.CloseHeatShield) {
+
+            return model;
+
+        }
+
+        var mesh = new MeshBuilder();
+        var center = (model.BoundsMax + model.BoundsMin) * 0.5f;
+        var radius = (model.BoundsMax.Z - model.BoundsMin.Z) * 0.5f;
+        var baseY = model.BoundsMin.Y;
+        var placement = float4x4.CreateTranslation(center.X, baseY, center.Z);
+        var ablator = mesh.AddMaterial(Ablator(mesh, recipe.Seed, radius));
+        var rim = mesh.AddMaterial(Material("shield_retainer", new float3(0.22f, 0.19f, 0.16f), 0.68f, 0.54f));
+        var options = LatheOptions.Default with {
+
+            VMetres = radius * 1.02f,
+
+        };
+
+        mesh.Lathe([new(0, -radius * 0.12f), new(radius * 0.5f, -radius * 0.098f), new(radius * 0.82f, -radius * 0.056f), new(radius * 0.99f, -radius * 0.018f)], ablator, options, placement);
+        mesh.Lathe([new(radius * 0.99f, -radius * 0.018f), new(radius, 0), new(radius * 0.992f, radius * 0.016f)], rim, options, placement);
+        mesh.Append(model, float4x4.Identity);
+
+        return mesh.Build(recipe.Output);
 
     }
 
@@ -594,8 +868,9 @@ public static class Generators {
 
         texture.Paint((u, v, t) => {
 
-            var x = (u - 0.5f) * size;
-            var z = (v - 0.5f) * size;
+            // The apron's top face uses site-local metres divided by width, with zero at the vehicle.
+            var x = (u - MathF.Round(u)) * size;
+            var z = (v - MathF.Round(v)) * size;
             var r = MathF.Sqrt(x * x + z * z);
 
             var grime = Noise.Fbm(u, v, 8, 6, recipe.Seed);
@@ -607,7 +882,10 @@ public static class Generators {
             var jv = MathF.Abs(v * joints % 1.0f - 0.5f) * 2;
             var joint = MathF.Max(MathF.Exp(-MathF.Pow((1 - ju) * size / joints / 0.05f, 2)), MathF.Exp(-MathF.Pow((1 - jv) * size / joints / 0.05f, 2)));
 
-            color *= 1 - 0.45f * joint;
+            var pour = Noise.Hash((int)(u * joints), (int)(v * joints), joints, recipe.Seed);
+            var aggregate = Noise.Value(u * 440, v * 440, 440, recipe.Seed);
+
+            color *= (0.89f + 0.17f * pour) * (0.90f + 0.20f * aggregate) * (1 - 0.70f * joint);
 
             var scorch = MathF.Max(0, 1 - r / 26) * (0.7f + 0.3f * stains);
 
@@ -623,6 +901,14 @@ public static class Generators {
             if (MathF.Abs(r - 8) < 0.15f) {
 
                 color = new float3(0.75f, 0.58f, 0.05f) * (1 - 0.6f * scorch);
+
+            }
+
+            var lane = MathF.Abs(z + 17);
+
+            if (MathF.Abs(lane - 3.2f) < 0.16f || (lane < 0.14f && (x + half) % 8 < 3)) {
+
+                color = new float3(0.64f, 0.60f, 0.48f) * (0.68f + 0.42f * aggregate);
 
             }
 
@@ -648,12 +934,195 @@ public static class Generators {
 
         var tower = new float3(-22, 0, 0);
 
+        var galvanized = mesh.AddMaterial(Material("galvanized_steel", new float3(0.48f, 0.50f, 0.51f), 0.82f, 0.48f));
+        var safety = mesh.AddMaterial(Material("safety_rail", new float3(0.78f, 0.44f, 0.045f), 0.05f, 0.50f));
+
         BuildTower(mesh, tower, 8, 72, steel);
+
+        for (var floor = 12; floor <= 72; floor += 12) {
+
+            ServiceDeck(mesh, tower + new float3(0, floor, 0), 5.1f, 4.8f, galvanized, safety);
+
+        }
+
+        for (var pipe = 0; pipe < 3; pipe++) {
+
+            var offset = float4x4.CreateTranslation(tower + new float3(-3.1f + pipe * 0.85f, 0, 4.35f));
+            var radius = 0.34f - pipe * 0.06f;
+
+            mesh.Cylinder(radius, 0, 69 - pipe * 4, white, 16, offset);
+
+            for (var y = 3; y < 69 - pipe * 4; y += 6) {
+
+                mesh.Cylinder(radius + 0.055f, y, y + 0.12f, galvanized, 16, offset);
+
+            }
+
+        }
+
+        mesh.Box(tower + new float3(-3.7f, 60, -3.8f), tower + new float3(2.4f, 63.1f, 2.5f), white);
+        ServiceDeck(mesh, tower + new float3(7.8f, 48, 0), 3.2f, 1.25f, galvanized, safety);
+        mesh.Strut(tower + new float3(4, 43, 1), tower + new float3(11, 48, 1), 0.32f, steel);
+        mesh.Strut(tower + new float3(4, 43, -1), tower + new float3(11, 48, -1), 0.32f, steel);
         mesh.Cylinder(0.25f, 72, 92, mast, 12, float4x4.CreateTranslation(tower));
 
         BuildWaterTower(mesh, new float3(-38, 0, 34), white, steel);
 
+        for (var tank = 0; tank < 3; tank++) {
+
+            var x = 22 + tank * 8;
+            var basePoint = new float3(x, 0, 41);
+            var barrel = float4x4.CreateRotationX(MathF.PI / 2) * float4x4.CreateTranslation(basePoint + new float3(0, 3.15f, 0));
+            ReadOnlySpan<float2> profile = [new(0, -8), new(1.45f, -7.7f), new(2.15f, -7.05f), new(2.35f, -6.2f), new(2.35f, 6.2f), new(2.15f, 7.05f), new(1.45f, 7.7f), new(0, 8)];
+
+            mesh.Lathe(profile, white, LatheOptions.Default, barrel);
+
+            for (var saddle = -4; saddle <= 4; saddle += 8) {
+
+                mesh.Box(basePoint + new float3(-1.75f, 0, saddle - 0.40f), basePoint + new float3(1.75f, 2.1f, saddle + 0.40f), galvanized);
+
+            }
+
+            var connection = basePoint + new float3(0, 3.15f, -7.9f);
+            var riser = basePoint + new float3(0, 3.15f, -10);
+
+            mesh.Strut(connection, riser, 0.32f, galvanized);
+            mesh.Strut(riser, riser - float3.UnitY * 2.4f, 0.32f, galvanized);
+
+        }
+
+        mesh.Strut(new float3(18, 0.75f, 31), new float3(40, 0.75f, 31), 0.42f, galvanized);
+
+        BuildServiceLoop(mesh, half, recipe.Seed, galvanized, white);
+        BuildExhaustChannel(mesh, half, galvanized);
+        var lampFace = Material("floodlight_lens", new float3(0.8f, 0.78f, 0.71f), 0, 0.25f);
+        lampFace.Emissive = new float3(6200, 5400, 4200);
+        var lens = mesh.AddMaterial(lampFace);
+
+        foreach (var lamp in LaunchComplex.Floodlights) {
+
+            var direction = float3.Normalize(lamp.Aim - lamp.Position);
+            var right = float3.Normalize(float3.Cross(float3.UnitY, direction));
+            var up = float3.Cross(direction, right);
+            var housing = float4x4.CreateFromQuaternion(FromTo(float3.UnitZ, direction)) * float4x4.CreateTranslation(lamp.Position);
+            mesh.Box(new float3(-0.49f, -0.32f, -0.31f), new float3(0.49f, 0.32f, 0), galvanized, housing);
+            mesh.Quad(lamp.Position + direction * 0.016f, right * 0.44f, up * 0.28f, lens);
+
+        }
+
+        var pole = LaunchComplex.Floodlights[^1].Position;
+        mesh.Cylinder(0.22f, 0, pole.Y - 0.35f, galvanized, 16, float4x4.CreateTranslation(pole.X, 0, pole.Z));
+
         return mesh.Build(recipe.Output);
+
+    }
+
+    private static void BuildServiceLoop(MeshBuilder mesh, float apronHalf, int seed, int metal, int siding) {
+
+        var asphalt = new TextureBuilder(256, 256);
+        asphalt.Paint((u, v, t) => {
+
+            var grain = Noise.Fbm(u, v, 70, 2, seed);
+            var aggregate = Noise.Fbm(u, v, 4, 4, seed + 1);
+            var lateral = MathF.Abs(u - 0.5f);
+            var shoulder = Math.Clamp((lateral - 0.34f + 0.045f * (aggregate - 0.5f)) * 80, 0, 1);
+            var track = MathF.Exp(-MathF.Pow((lateral - 0.15f) / 0.055f, 2));
+            t.Color = float3.Lerp(new float3(0.066f, 0.072f, 0.073f), new float3(0.25f, 0.22f, 0.17f), shoulder);
+            t.Color *= (0.61f + 0.53f * grain + 0.26f * aggregate) * (1 - 0.15f * track);
+
+            if (MathF.Abs(lateral - 0.315f) < 0.007f || (lateral < 0.008f && v < 0.38f)) {
+
+                t.Color = new float3(0.58f, 0.53f, 0.37f) * (0.6f + 0.4f * grain);
+
+            }
+
+        });
+
+        var paving = Material("service_asphalt", new float3(1), 0, 0.88f);
+        paving.BaseColorTexture = mesh.AddTexture(asphalt.BaseColor("service_asphalt"));
+        var road = mesh.AddMaterial(paving);
+        List<float3> path = [new(apronHalf, 0.09f, -17)];
+
+        void Bend(float x, float z, float start) {
+
+            for (var step = 0; step <= 12; step++) {
+
+                var angle = start - step * MathF.PI / 24;
+                path.Add(new float3(x + 17 * MathF.Cos(angle), 0.09f, z + 17 * MathF.Sin(angle)));
+
+            }
+
+        }
+
+        Bend(89, -34, MathF.PI * 0.5f);
+        Bend(89, -83, 0);
+        Bend(-89, -83, -MathF.PI * 0.5f);
+        Bend(-89, -34, -MathF.PI);
+        path.Add(new float3(-apronHalf, 0.09f, -17));
+        var previousSide = new float3(0, 0, 5);
+        var length = 0f;
+
+        for (var i = 1; i < path.Count; i++) {
+
+            var tangent = float3.Normalize(path[Math.Min(i + 1, path.Count - 1)] - path[i - 1]);
+            var side = float3.Cross(tangent, float3.UnitY) * 5;
+            var next = length + (path[i] - path[i - 1]).Length();
+            mesh.Quad(path[i - 1] - previousSide, path[i - 1] + previousSide, path[i] + side, path[i] - side, road, length / 9, next / 9);
+            previousSide = side;
+            length = next;
+
+        }
+
+        var foundation = mesh.AddMaterial(Material("utility_concrete", new float3(0.31f, 0.30f, 0.27f), 0, 0.88f));
+        var doors = mesh.AddMaterial(Material("utility_trim", new float3(0.13f, 0.17f, 0.16f), 0.2f, 0.63f));
+        mesh.Box(new float3(-54, -0.25f, -121), new float3(-11, 0.16f, -104.8f), foundation);
+        mesh.Box(new float3(-50, 0.16f, -119), new float3(-17, 4.8f, -110), siding);
+        mesh.Box(new float3(-50.4f, 4.8f, -119.4f), new float3(-16.6f, 5.05f, -109.6f), metal);
+
+        for (var bay = 0; bay < 4; bay++) {
+
+            var x = -46 + bay * 8;
+            mesh.Box(new float3(x, 0.16f, -110), new float3(x + 3.7f, 3.6f, -109.86f), doors);
+
+            for (var slat = 1; slat < 8; slat++) {
+
+                var y = slat * 0.43f;
+                mesh.Box(new float3(x, y, -109.86f), new float3(x + 3.7f, y + 0.035f, -109.82f), metal);
+
+            }
+
+        }
+
+    }
+
+    private static void BuildExhaustChannel(MeshBuilder mesh, float apronHalf, int metal) {
+
+        var refractory = mesh.AddMaterial(Material("refractory_lining", new float3(0.13f, 0.115f, 0.097f), 0, 0.89f));
+
+        for (var side = -1; side <= 1; side += 2) {
+
+            var z = side * 4.7f;
+            mesh.Box(new float3(7, 0, z - 0.32f), new float3(apronHalf - 4, 0.74f, z + 0.32f), refractory);
+
+            for (var x = 8; x < apronHalf - 5; x += 5) {
+
+                mesh.Box(new float3(x, 0, z - 0.65f), new float3(x + 0.45f, 0.87f, z + 0.65f), refractory);
+
+            }
+
+        }
+
+        for (var bridge = 0; bridge < 2; bridge++) {
+
+            var x = 16 + bridge * 25;
+            for (var grate = 0; grate < 12; grate++) {
+
+                var start = x + grate * 0.21f;
+                mesh.Box(new float3(start, 0.73f, -4.8f), new float3(start + 0.11f, 0.88f, 4.8f), metal);
+
+            }
+
+        }
 
     }
 
@@ -689,6 +1158,32 @@ public static class Generators {
 
     }
 
+    private static void ServiceDeck(MeshBuilder mesh, float3 center, float halfWidth, float halfDepth, int floor, int rail) {
+
+        mesh.Box(center + new float3(-halfWidth, -0.28f, -halfDepth), center + new float3(halfWidth, 0, halfDepth), floor);
+        Span<float3> corners = [new(-halfWidth, 0, -halfDepth), new(halfWidth, 0, -halfDepth), new(halfWidth, 0, halfDepth), new(-halfWidth, 0, halfDepth)];
+
+        for (var side = 0; side < corners.Length; side++) {
+
+            var start = center + corners[side];
+            var end = center + corners[(side + 1) % corners.Length];
+            var posts = (int)MathF.Ceiling((end - start).Length() / 2);
+
+            for (var post = 0; post < posts; post++) {
+
+                var basePoint = start + (end - start) * ((float)post / posts);
+
+                mesh.Strut(basePoint, basePoint + float3.UnitY * 1.1f, 0.07f, rail);
+
+            }
+
+            mesh.Strut(start + float3.UnitY * 0.55f, end + float3.UnitY * 0.55f, 0.06f, rail);
+            mesh.Strut(start + float3.UnitY * 1.1f, end + float3.UnitY * 1.1f, 0.08f, rail);
+
+        }
+
+    }
+
     private static void BuildWaterTower(MeshBuilder mesh, float3 origin, int tank, int legs) {
 
         var options = LatheOptions.Default with { Segments = 48, SmoothAngleDeg = 50 };
@@ -704,7 +1199,24 @@ public static class Generators {
 
         var bowl = float4x4.CreateTranslation(origin + new float3(0, top, 0));
 
-        mesh.Lathe([new(0, -1.5f), new(3.5f, 0), new(6, 2.5f), new(6, 6), new(4.5f, 7.5f), new(0, 8.2f)], tank, options, bowl);
+        var shell = new float2[25];
+
+        for (var ring = 0; ring < shell.Length; ring++) {
+
+            var angle = MathF.PI * ring / (shell.Length - 1);
+            shell[ring] = new float2(6 * MathF.Sin(angle), 3.4f - 4.9f * MathF.Cos(angle));
+
+        }
+
+        mesh.Lathe(shell, tank, options, bowl);
+        mesh.Cylinder(0.67f, 0, top, tank, 24, float4x4.CreateTranslation(origin));
+
+        for (var side = 0; side < feet.Length; side++) {
+
+            var next = feet[(side + 1) % feet.Length];
+            mesh.Strut(origin + feet[side] * 0.85f + float3.UnitY * 6, origin + next * 0.57f + float3.UnitY * 17, 0.16f, legs);
+
+        }
 
     }
 

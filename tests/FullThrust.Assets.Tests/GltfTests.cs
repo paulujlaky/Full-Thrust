@@ -23,6 +23,9 @@ public class GltfTests {
         }
 
         var material = new MaterialData { Name = "painted", BaseColor = new float4(0.5f, 0.6f, 0.7f, 1), Metallic = 0.25f, Roughness = 0.75f, Emissive = new float3(0.1f, 0, 0) };
+        material.AlphaMode = AlphaMode.Mask;
+        material.AlphaCutoff = 0.37f;
+        material.Emissive = new float3(24, 12, 6);
 
         material.BaseColorTexture = mesh.AddTexture(new TextureData { Name = "checker", Width = 4, Height = 4, Pixels = checker, Srgb = true });
 
@@ -52,6 +55,8 @@ public class GltfTests {
             Assert.Equal(0.25f, painted.Metallic);
             Assert.Equal(0.75f, painted.Roughness);
             Assert.Equal(material.Emissive, painted.Emissive);
+            Assert.Equal(material.AlphaMode, painted.AlphaMode);
+            Assert.Equal(material.AlphaCutoff, painted.AlphaCutoff);
 
             var texture = loaded.Textures[painted.BaseColorTexture];
 

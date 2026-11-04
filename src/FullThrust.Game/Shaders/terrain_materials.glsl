@@ -37,50 +37,60 @@ struct DetailSample {
 
 };
 
-vec2 TileOffset(float index) {
+uint PatchHash(ivec2 cell, int layer) {
 
-    return fract(sin(vec2(index * 12.9898, index * 78.233)) * 43758.5453);
+    uint h = uint(cell.x) * 1597334677u ^ uint(cell.y) * 3812015801u ^ uint(layer + 1) * 2798796415u;
+    h = (h ^ (h >> 16u)) * 2246822519u;
+
+    return h ^ (h >> 13u);
 
 }
 
-// One plane; a non-negative variant blends two noise-picked tile offsets so the grid never shows.
-void SamplePlane(int layer, vec2 uv, vec2 gx, vec2 gy, float variant, out vec4 albedo, out vec4 surface) {
+void SamplePlane(int layer, vec2 metres, vec2 gx, vec2 gy, float scale, mat2 rotation, out vec4 albedo, out vec4 surface) {
 
-    if (variant < 0.0) {
+    // Power-of-two patch spacing closes exactly across the terrain's 65536 m coordinate wrap.
+    float spacing = clamp(exp2(ceil(log2(1.0 / scale))), 1.0, 32768.0);
+    vec2 lattice = metres / spacing;
+    vec2 cell = floor(lattice);
+    vec2 f = fract(lattice);
+    vec2 middle = f.x > f.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec2 corners[3] = vec2[](vec2(0.0), middle, vec2(1.0));
+    vec3 weights = vec3(1.0 - max(f.x, f.y), abs(f.x - f.y), min(f.x, f.y));
+    weights *= weights;
+    weights /= dot(weights, vec3(1.0));
+    albedo = vec4(0.0);
+    surface = vec4(0.0);
 
-        albedo = textureGrad(albedoMaps, vec3(uv, layer), gx, gy);
-        surface = textureGrad(surfaceMaps, vec3(uv, layer), gx, gy);
+    for (int i = 0; i < 3; i++) {
 
-        return;
+        vec2 corner = corners[i];
+        uint h = PatchHash(ivec2(mod(cell + corner, 65536.0 / spacing)), layer);
+        vec2 phase = vec2(h & 4095u, (h >> 12u) & 4095u) / 4096.0;
+        vec2 signs = vec2((h & (1u << 24u)) == 0u ? 1.0 : -1.0, (h & (1u << 25u)) == 0u ? 1.0 : -1.0);
+        mat2 basis = mat2(signs.x, 0.0, 0.0, signs.y) * rotation;
+
+        if ((h & (1u << 26u)) != 0u) {
+
+            basis = mat2(basis[0].yx, basis[1].yx);
+
+        }
+
+        vec3 uv = vec3(basis * ((f - corner) * (spacing * scale)) + phase, layer);
+        vec2 dx = basis * (gx * scale);
+        vec2 dy = basis * (gy * scale);
+        vec4 sampleSurface = textureGrad(surfaceMaps, uv, dx, dy);
+        sampleSurface.xy = transpose(basis) * (sampleSurface.xy - 0.5) + 0.5;
+        albedo += weights[i] * textureGrad(albedoMaps, uv, dx, dy);
+        surface += weights[i] * sampleSurface;
 
     }
-
-    float index = floor(variant);
-    float t = smoothstep(0.2, 0.8, variant - index);
-
-    vec2 a = uv + TileOffset(index);
-    vec2 b = uv + TileOffset(index + 1.0);
-
-    albedo = mix(textureGrad(albedoMaps, vec3(a, layer), gx, gy), textureGrad(albedoMaps, vec3(b, layer), gx, gy), t);
-    surface = mix(textureGrad(surfaceMaps, vec3(a, layer), gx, gy), textureGrad(surfaceMaps, vec3(b, layer), gx, gy), t);
 
 }
 
 // Triplanar in the body-fixed frame with UDN normals; near-zero planes are skipped.
-DetailSample SampleDetail(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend, float scale, float angle, float variant) {
+DetailSample SampleDetail(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend, float scale, float angle) {
 
     mat2 r = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
-
-    vec3 p = position * scale;
-    vec3 px = dx * scale;
-    vec3 py = dy * scale;
-
-    p.xy = r * p.xy;
-    p.yz = r * p.yz;
-    px.xy = r * px.xy;
-    px.yz = r * px.yz;
-    py.xy = r * py.xy;
-    py.yz = r * py.yz;
 
     vec3 w = blend * step(vec3(0.02), blend);
 
@@ -95,7 +105,7 @@ DetailSample SampleDetail(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend
 
     if (w.x > 0.0) {
 
-        SamplePlane(layer, p.zy, px.zy, py.zy, variant, a, s);
+        SamplePlane(layer, position.zy, dx.zy, dy.zy, scale, r, a, s);
 
         albedo += a * w.x;
         surface += s * w.x;
@@ -105,7 +115,7 @@ DetailSample SampleDetail(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend
 
     if (w.y > 0.0) {
 
-        SamplePlane(layer, p.xz, px.xz, py.xz, variant, a, s);
+        SamplePlane(layer, position.xz, dx.xz, dy.xz, scale, r, a, s);
 
         albedo += a * w.y;
         surface += s * w.y;
@@ -115,7 +125,7 @@ DetailSample SampleDetail(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend
 
     if (w.z > 0.0) {
 
-        SamplePlane(layer, p.xy, px.xy, py.xy, variant, a, s);
+        SamplePlane(layer, position.xy, dx.xy, dy.xy, scale, r, a, s);
 
         albedo += a * w.z;
         surface += s * w.z;
@@ -157,7 +167,7 @@ float TileFade(float metresPerPixel, float scale) {
 }
 
 // Two tiling levels, the coarser eight times larger, so detail carries further and repeats less. Fade is the coarse level's.
-DetailSample SampleLayered(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend, float scale, float metresPerPixel, float variant, out float fade) {
+DetailSample SampleLayered(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blend, float scale, float metresPerPixel, out float fade) {
 
     const float Coarse = 0.1173;
 
@@ -165,7 +175,7 @@ DetailSample SampleLayered(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blen
 
     fade = TileFade(metresPerPixel, scale * Coarse);
 
-    DetailSample coarse = SampleDetail(layer, position, dx, dy, blend, scale * Coarse, 0.61, variant);
+    DetailSample coarse = SampleDetail(layer, position, dx, dy, blend, scale * Coarse, 0.61);
 
     if (near <= 0.0) {
 
@@ -174,6 +184,6 @@ DetailSample SampleLayered(int layer, vec3 position, vec3 dx, vec3 dy, vec3 blen
     }
 
     // Up close the coarse level still breaks up the repeats of the fine one.
-    return MixDetail(coarse, SampleDetail(layer, position, dx, dy, blend, scale, 0.0, variant * 0.37), near * 0.75);
+    return MixDetail(coarse, SampleDetail(layer, position, dx, dy, blend, scale, 0.0), near * 0.75);
 
 }

@@ -79,6 +79,7 @@ public struct FrameUniforms {
     // Point lights such as engine plumes: xyz position, w softening radius; rgb intensity in candela; x count.
     public LightVectors LightPositions;
     public LightVectors LightIntensities;
+    public LightVectors LightDirections;
     public float4 LightCount;
 
     // Bodies that can pass in front of the sun: xyz centre relative to the camera, w radius; rgb of the sunlight each leaks into its umbra.
@@ -101,9 +102,10 @@ public static class GlobalBindings {
     public const int CloudNoise = 8;
     public const int SkyShafts = 9;
     public const int CloudShadowMap = 10;
+    public const int WeatherMap = 11;
 
     // Every binding after Frame is a combined image sampler; add new ones here and in common.glsl.
-    public const int Count = 11;
+    public const int Count = 12;
 
 }
 

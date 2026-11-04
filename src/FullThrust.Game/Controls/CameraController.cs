@@ -1,7 +1,9 @@
 using Brutal.GlfwApi;
 using Brutal.Numerics;
+using FullThrust.Core.Craft;
 using FullThrust.Core.Ecs;
 using FullThrust.Core.Orbits;
+using FullThrust.Core.Parts;
 using FullThrust.Core.Space;
 using FullThrust.Game.Platform;
 using FullThrust.Game.Scene;
@@ -27,6 +29,7 @@ public sealed class CameraController {
     private readonly List<CameraTarget> _targets = [];
 
     private int _current;
+    private Entity _inspection;
 
     public CameraController(InputState input, Camera camera, DemoScene scene) {
 
@@ -84,11 +87,29 @@ public sealed class CameraController {
         }
 
         _current = (index % _targets.Count + _targets.Count) % _targets.Count;
+        _inspection = Entity.Null;
 
         var target = _targets[_current];
 
         Rig.MinDistance = target.MinDistance;
         Rig.Distance = target.DefaultDistance;
+
+    }
+
+    public void InspectPart(World world, string id) {
+
+        foreach (var row in world.Query<Part>()) {
+
+            if (row.C1.Craft == Target && string.Equals(row.C1.Definition.Id, id, StringComparison.OrdinalIgnoreCase)) {
+
+                _inspection = row.Entity;
+                return;
+
+            }
+
+        }
+
+        throw new ArgumentException($"Camera target has no part named '{id}'.");
 
     }
 
@@ -126,7 +147,26 @@ public sealed class CameraController {
 
         }
 
-        TargetPosition = world.Get<Transform>(entity).Position;
+        ref readonly var transform = ref world.Get<Transform>(entity);
+        TargetPosition = transform.Position;
+
+        if (world.IsAlive(_inspection) && world.Get<Part>(_inspection).Craft == entity) {
+
+            TargetPosition = world.Get<Transform>(_inspection).Position;
+
+        } else if (world.Store<Vessel>().Has(entity)) {
+
+            ref readonly var vessel = ref world.Get<Vessel>(entity);
+            ref readonly var root = ref world.Get<Part>(vessel.Root);
+            var top = root.LocalPosition.Y + root.Definition.Length * 0.5;
+            var height = Math.Max(1, top - vessel.Bottom);
+
+            // Close inspection follows the command section; pulling back frames the whole remaining stack.
+            var blend = Math.Clamp((Rig.Distance / height - 0.25) / 0.75, 0, 1);
+            var midpoint = (top + vessel.Bottom) * 0.5;
+            TargetPosition += transform.Rotation * new double3(0, double.Lerp(root.LocalPosition.Y, midpoint, blend * blend * (3 - 2 * blend)), 0);
+
+        }
 
         Rig.Apply(Camera, TargetPosition, UpFor(world, entity));
 

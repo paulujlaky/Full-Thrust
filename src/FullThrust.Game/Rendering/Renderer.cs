@@ -368,6 +368,7 @@ public sealed class Renderer : IDisposable {
 
         }
 
+        lighting.SiteLights.Fill(ref uniforms, true);
         Frames.Write(_frame, uniforms);
 
     }

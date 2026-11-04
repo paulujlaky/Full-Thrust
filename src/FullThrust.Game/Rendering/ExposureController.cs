@@ -215,10 +215,13 @@ public sealed class ExposureController : IRenderPass, IResizeListener {
         sorted.Sort();
 
         var highlight = sorted[Math.Min((int)(blocks * HighlightPercentile), blocks - 1)];
+        // A crescent against space can fit entirely above the ordinary highlight percentile.
+        var brightSubject = sorted[(int)((blocks - 1) * 0.98)] * 0.25;
 
         // The log average suits ordinary scenes; a small bright source in the dark, like a night launch, pulls the arithmetic mean up, and a glow filling much of the view the highlights.
         var luminance = Math.Max(Math.Max(Math.Pow(2, total / weight), MeanShare * linear / weight), highlight / HighlightRange);
 
+        luminance = Math.Max(luminance, brightSubject);
         MeasuredLuminance = (float)luminance;
 
         if (!Automatic) {

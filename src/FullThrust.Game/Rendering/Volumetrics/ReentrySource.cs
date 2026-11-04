@@ -17,7 +17,7 @@ public sealed class ReentrySource : IVolumeSource {
     private const double PeakFlux = 2e6;
 
     // Radiance of the shock layer at peak heating, in cd/m2.
-    private const float PeakLuminance = 120f;
+    private const float PeakLuminance = 16000f;
 
     private static readonly float3 Dim = new(1.0f, 0.36f, 0.12f);
     private static readonly float3 Hot = new(1.0f, 0.72f, 0.66f);
@@ -75,13 +75,13 @@ public sealed class ReentrySource : IVolumeSource {
             Strength = MathF.Max(Strength, strength);
 
             var colour = float3.Lerp(Dim, Hot, strength);
-            var luminance = PeakLuminance * strength * strength;
+            var luminance = PeakLuminance * strength * strength * strength;
             var downstream = -SpaceMath.ToFloat(upstream);
 
             // One shock wraps the whole windward line, so a capsule glows at its shield and a broadside stack wears a single sheath.
             var radius = (float)nose * 1.3f;
             var length = radius * 5;
-            var standoff = upstream * (radius * 0.2);
+            var standoff = upstream * (radius * 0.12);
 
             var nearEnd = _origin.ToLocal(head + standoff);
             var farEnd = _origin.ToLocal(tail + standoff);
@@ -94,7 +94,7 @@ public sealed class ReentrySource : IVolumeSource {
 
             var shock = volumes.Add(new VolumePrimitive {
 
-                Kind = new int4((int)VolumeKind.Shock, 16, 1, 0),
+                Kind = new int4((int)VolumeKind.Shock, 48, 0, 0),
                 Position = new float4((nearEnd + farEnd) * 0.5f + downstream * (length * 0.5f), span.Length() * 0.5f + MathF.Sqrt(length * length * 0.25f + 2 * radius * length) + radius),
                 Axis = new float4(downstream, length),
                 Medium = new float4(0, 0, 0, 0),
@@ -200,6 +200,8 @@ public sealed class ReentrySource : IVolumeSource {
             var partAxis = craft.Rotation * (part.LocalRotation * double3.UnitY);
             var side = Math.Abs(double3.Dot(partAxis, across));
             var extent = side * part.Definition.Length * 0.5 + (1 - side) * part.Definition.Radius;
+            // The curved shock already wraps around each end of the swept line.
+            extent = Math.Max(0, extent - part.Definition.Radius * 0.8);
             var centre = double3.Dot(offset, across);
 
             // The part's most upstream point, level with its centre across the flow.

@@ -89,6 +89,8 @@ public sealed class PropellantLoadData {
 
 public sealed class EngineData {
 
+    public NozzleCluster? Cluster { get; set; }
+
     public string Fuel { get; set; } = "";
 
     public string? Oxidizer { get; set; }

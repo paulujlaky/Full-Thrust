@@ -22,7 +22,7 @@ public struct MaterialUniforms {
     // metallic, roughness, occlusion strength, alpha cutoff.
     public float4 Params;
 
-    // x alpha mask enabled.
+    // x alpha mask enabled, y double sided.
     public float4 Flags;
 
 }
@@ -174,7 +174,7 @@ public sealed class ModelLibrary : IDisposable {
                 BaseColor = material.BaseColor,
                 Emissive = new float4(material.Emissive, material.NormalScale),
                 Params = new float4(material.Metallic, material.Roughness, material.OcclusionStrength, material.AlphaCutoff),
-                Flags = new float4(material.AlphaMode == AlphaMode.Mask ? 1 : 0, 0, 0, 0),
+                Flags = new float4(material.AlphaMode == AlphaMode.Mask ? 1 : 0, material.DoubleSided ? 1 : 0, 0, 0),
 
             });
 
@@ -245,9 +245,15 @@ public sealed class ModelLibrary : IDisposable {
     }
 
     // Records every instance of a catalog model; entity is the render-local placement of its owner.
-    public void Draw(CommandBuffer cmd, VkPipelineLayout layout, VkPipeline single, VkPipeline both, int definition, in float4x4 entity, in float4x4 entityRotation, bool depthOnly = false, int cascade = -1) {
+    public void Draw(CommandBuffer cmd, VkPipelineLayout layout, VkPipeline single, VkPipeline both, VkPipeline cutout, int definition, in float4x4 entity, in float4x4 entityRotation, in Frustum frustum, bool depthOnly, int cascade) {
 
         ref readonly var placement = ref _placements[definition];
+
+        if (!frustum.Intersects(float3.Transform(placement.Center, entity), placement.Radius)) {
+
+            return;
+
+        }
 
         var model = _models[placement.Model];
         var source = model.Data;
@@ -255,7 +261,7 @@ public sealed class ModelLibrary : IDisposable {
         model.Bind(cmd);
 
         var boundMaterial = -1;
-        var boundBoth = -1;
+        var boundPipeline = -1;
 
         for (var i = 0; i < placement.Locals.Length; i++) {
 
@@ -281,19 +287,13 @@ public sealed class ModelLibrary : IDisposable {
 
                 var primitive = source.Primitives[p];
 
-                // Depth-only pipelines have no fragment shader to discard cut-out texels.
-                if (depthOnly && source.Materials[primitive.Material].AlphaMode == AlphaMode.Mask) {
+                var pipeline = depthOnly && source.Materials[primitive.Material].AlphaMode == AlphaMode.Mask
+                    ? 2 : model.DoubleSided[primitive.Material] ? 1 : 0;
 
-                    continue;
+                if (pipeline != boundPipeline) {
 
-                }
-
-                var twoSided = model.DoubleSided[primitive.Material] ? 1 : 0;
-
-                if (twoSided != boundBoth) {
-
-                    cmd.BindPipeline(VkPipelineBindPoint.Graphics, twoSided == 1 ? both : single);
-                    boundBoth = twoSided;
+                    cmd.BindPipeline(VkPipelineBindPoint.Graphics, pipeline == 2 ? cutout : pipeline == 1 ? both : single);
+                    boundPipeline = pipeline;
 
                 }
 
@@ -380,13 +380,17 @@ public sealed class ModelLibrary : IDisposable {
     private readonly struct Placement {
 
         public readonly int Model;
+        public readonly float3 Center;
+        public readonly float Radius;
 
         public readonly float4x4[] Locals;
         public readonly float4x4[] Normals;
 
-        private Placement(int model, float4x4[] locals, float4x4[] normals) {
+        private Placement(int model, float4x4[] locals, float4x4[] normals, float3 min, float3 max) {
 
             Model = model;
+            Center = (min + max) * 0.5f;
+            Radius = (max - min).Length() * 0.5f;
             Locals = locals;
             Normals = normals;
 
@@ -422,7 +426,8 @@ public sealed class ModelLibrary : IDisposable {
 
             }
 
-            var fit = rotation * FitMatrix(definition, min, max) * float4x4.CreateTranslation(SpaceMath.ToFloat(definition.Offset));
+            var placement = FitMatrix(definition, min, max) * float4x4.CreateTranslation(SpaceMath.ToFloat(definition.Offset));
+            var fit = rotation * placement;
             var locals = new float4x4[model.Instances.Length];
             var normals = new float4x4[model.Instances.Length];
 
@@ -436,7 +441,7 @@ public sealed class ModelLibrary : IDisposable {
 
             }
 
-            return new Placement(index, locals, normals);
+            return new Placement(index, locals, normals, float3.Transform(min, placement), float3.Transform(max, placement));
 
         }
 

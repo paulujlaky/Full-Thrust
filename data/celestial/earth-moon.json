@@ -14,7 +14,7 @@
       "initialRotationDeg": 0,
       "debugColor": [0.18, 0.35, 0.65],
       "terrain": {
-        "type": "continental", "seed": 33, "ocean": true, "cityLights": 3,
+        "type": "continental", "seed": 33, "ocean": true, "cityLights": 3, "orbitalDetailScale": 1.65,
         "continentFrequency": 1.6, "oceanDepth": 4200, "mountainHeight": 5200,
         "detailAmplitude": 320, "detailWavelength": 120000, "roughness": 0.8,
         "colors": {
@@ -30,9 +30,16 @@
           { "channel": "rock", "texture": "rocky_terrain_02", "tileSize": 6 },
           { "channel": "snow", "texture": "snow_field_aerial", "tileSize": 12 }
         ],
-        "sites": [ { "name": "Launch Complex 1", "latitudeDeg": 28.5, "longitudeDeg": 0, "radius": 160, "blend": 900, "minimumHeight": 6 } ]
+        "sites": [ {
+          "name": "Launch Complex 1", "latitudeDeg": 28.5, "longitudeDeg": 0, "radius": 160, "blend": 900, "minimumHeight": 6,
+          "groves": [
+            { "model": "scene/coastal-scrub.glb", "count": 95, "seed": 43, "innerRadius": 165, "outerRadius": 530, "footprintRadius": 18 },
+            { "model": "scene/coastal-pines.glb", "count": 105, "seed": 86, "innerRadius": 215, "outerRadius": 860, "footprintRadius": 23 },
+            { "model": "scene/coastal-pines.glb", "count": 92, "seed": 253, "innerRadius": 840, "outerRadius": 1650, "footprintRadius": 23 }
+          ]
+        } ]
       },
-      "clouds": { "baseAltitude": 1500, "thickness": 4000, "coverage": 0.45, "weatherScale": 60000, "shapeScale": 3000, "detailScale": 500, "extinction": 0.04, "windSpeed": 8 },
+      "clouds": { "baseAltitude": 1500, "thickness": 4000, "coverage": 0.45, "weatherScale": 60000, "shapeScale": 3000, "detailScale": 500, "extinction": 0.024, "windSpeed": 8, "cirrusAltitude": 9800 },
       "atmosphere": {
         "height": 140000,
         "surfacePressure": 101325,
@@ -61,7 +68,7 @@
       "initialRotationDeg": 0,
       "debugColor": [0.55, 0.55, 0.52],
       "terrain": {
-        "type": "cratered", "seed": 11,
+        "type": "cratered", "seed": 11, "orbitalDetailScale": 4.1,
         "continentFrequency": 1.3, "mareDepth": 1800,
         "detailAmplitude": 900, "detailWavelength": 200000, "roughness": 0.85,
         "largestCrater": 60000, "smallestCrater": 30, "craterDensity": 0.55,

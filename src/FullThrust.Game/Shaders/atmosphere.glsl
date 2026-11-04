@@ -577,7 +577,7 @@ ScatteringResult MarchToSurface(vec3 origin, vec3 direction, float distance) {
 
 }
 
-vec3 FroxelAerialPerspective(vec3 radiance, float distance, vec2 fragCoord) {
+vec3 FroxelAerialPerspective(vec3 radiance, float distance, vec2 fragCoord, float opacity) {
 
     float maxDistance = frame.aerialPerspective.x;
     float slices = frame.aerialPerspective.y;
@@ -589,12 +589,12 @@ vec3 FroxelAerialPerspective(vec3 radiance, float distance, vec2 fragCoord) {
     float first = maxDistance / (slices * slices);
     float fade = clamp(distance / first, 0.0, 1.0);
 
-    return radiance * mix(1.0, ap.a, fade) + ap.rgb * fade * frame.sunIlluminance.rgb;
+    return radiance * mix(1.0, ap.a, fade) + ap.rgb * (fade * opacity) * frame.sunIlluminance.rgb;
 
 }
 
 // Aerial perspective between the camera and a surface; radiance is before exposure. aerialPerspective.w picks the method.
-vec3 ApplyAerialPerspective(vec3 radiance, vec3 worldPosition, vec2 fragCoord) {
+vec3 ApplyAerialPerspective(vec3 radiance, vec3 worldPosition, vec2 fragCoord, float opacity) {
 
     if (!AtmosphereEnabled() || frame.aerialPerspective.z < 0.5) {
 
@@ -606,7 +606,7 @@ vec3 ApplyAerialPerspective(vec3 radiance, vec3 worldPosition, vec2 fragCoord) {
     float distance = length(offset);
     float marched = frame.aerialPerspective.w;
 
-    vec3 froxel = marched < 1.0 ? FroxelAerialPerspective(radiance, distance, fragCoord) : radiance;
+    vec3 froxel = marched < 1.0 ? FroxelAerialPerspective(radiance, distance, fragCoord, opacity) : radiance;
 
     if (marched <= 0.0) {
 
@@ -614,9 +614,15 @@ vec3 ApplyAerialPerspective(vec3 radiance, vec3 worldPosition, vec2 fragCoord) {
 
     }
 
-    ScatteringResult r = MarchToSurface(PlanetRelative(frame.cameraPosition.xyz), offset / distance, distance);
-    vec3 direct = radiance * r.transmittance + r.luminance * frame.sunIlluminance.rgb;
+    ScatteringResult r = MarchToSurface(PlanetRelative(frame.cameraPosition.xyz), offset / max(distance, 1e-5), distance);
+    vec3 direct = radiance * r.transmittance + r.luminance * opacity * frame.sunIlluminance.rgb;
 
     return mix(froxel, direct, marched);
+
+}
+
+vec3 ApplyAerialPerspective(vec3 radiance, vec3 worldPosition, vec2 fragCoord) {
+
+    return ApplyAerialPerspective(radiance, worldPosition, fragCoord, 1.0);
 
 }

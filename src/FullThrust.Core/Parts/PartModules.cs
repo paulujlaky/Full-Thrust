@@ -42,7 +42,20 @@ public sealed class TankDefinition : IPartModuleDefinition {
 
 }
 
+public sealed class NozzleCluster {
+
+    public int RingCount { get; init; }
+    public double RingRadius { get; init; }
+    public bool Center { get; init; }
+
+    public double Diameter { get; init; }
+    public double Length { get; init; }
+
+}
+
 public sealed class EngineDefinition : IPartModuleDefinition {
+
+    public NozzleCluster? Cluster { get; init; }
 
     public required int Fuel { get; init; }
 

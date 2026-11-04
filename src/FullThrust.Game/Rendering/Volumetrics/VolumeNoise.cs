@@ -1,4 +1,5 @@
 using Brutal;
+using Brutal.StbApi;
 using Brutal.VulkanApi;
 using Brutal.VulkanApi.Abstractions;
 
@@ -15,6 +16,7 @@ public sealed class VolumeNoise : IDisposable {
 
     private readonly RenderTexture _shape;
     private readonly RenderTexture _detail;
+    private readonly GpuTexture _weather;
 
     private readonly ComputeKernel _shapeKernel;
     private readonly ComputeKernel _detailKernel;
@@ -26,15 +28,22 @@ public sealed class VolumeNoise : IDisposable {
 
     private bool _generated;
 
-    public VolumeNoise(DeviceEx device, ShaderLibrary shaders, VkDescriptorSetLayout frameLayout) {
+    public VolumeNoise(DeviceEx device, ShaderLibrary shaders, VkDescriptorSetLayout frameLayout, GpuUploader uploader) {
 
         _device = device;
 
         _shape = new RenderTexture(device, "VolumeShapeNoise", VkFormat.R8G8B8A8UNorm, ShapeSize, ShapeSize, ShapeSize);
         _detail = new RenderTexture(device, "VolumeDetailNoise", VkFormat.R8G8B8A8UNorm, DetailSize, DetailSize, DetailSize);
+        using var pixels = Stb.Load(Path.Combine(AppContext.BaseDirectory, "data", "textures", "weather", "blue-marble-clouds.png"), 4);
+        _weather = new GpuTexture(uploader, "SatelliteCoverage", pixels.AsSpan(), pixels.Width, pixels.Height, srgb: false);
+        uploader.Flush();
 
         _setLayout = Descriptors.CreateLayout(device, [Descriptors.Binding(0, VkDescriptorType.StorageImage, VkShaderStageFlags.ComputeBit)]);
-        _pool = Descriptors.CreatePool(device, 2, [new VkDescriptorPoolSize { Type = VkDescriptorType.StorageImage, DescriptorCount = 2 }]);
+        _pool = Descriptors.CreatePool(device, 2, [
+
+            new VkDescriptorPoolSize { Type = VkDescriptorType.StorageImage, DescriptorCount = 2 },
+
+        ]);
 
         _shapeSet = Descriptors.Allocate(device, _pool, _setLayout);
         _detailSet = Descriptors.Allocate(device, _pool, _setLayout);
@@ -61,6 +70,7 @@ public sealed class VolumeNoise : IDisposable {
     public VkImageView Shape => _shape.View;
 
     public VkImageView Detail => _detail.View;
+    public VkImageView Weather => _weather.View;
 
     public VkSampler Sampler { get; }
 
@@ -93,6 +103,7 @@ public sealed class VolumeNoise : IDisposable {
         _detailKernel.Dispose();
         _shape.Dispose();
         _detail.Dispose();
+        _weather.Dispose();
 
         _device.DestroySampler(Sampler, null);
         _device.DestroyDescriptorPool(_pool, null);

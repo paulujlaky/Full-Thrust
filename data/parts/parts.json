@@ -22,7 +22,7 @@
     },
     {
       "id": "pod-concord", "name": "Concord Crew Capsule", "category": "command",
-      "mass": 7500, "length": 4.0, "diameter": 3.7, "shape": "frustum", "dragCoefficient": 0.5,
+      "mass": 7500, "length": 4.0, "diameter": 3.66, "shape": "frustum", "dragCoefficient": 0.5,
       "color": [0.85, 0.86, 0.88],
       "model": { "file": "parts/pod-concord.glb" },
       "command": { "reactionWheelTorque": 2000 },
@@ -113,6 +113,7 @@
       "mass": 3000, "length": 10, "diameter": 3.66,
       "color": [0.93, 0.93, 0.93],
       "model": { "file": "parts/tank-harrier-2.glb" },
+      "decoupler": { "ejectionImpulse": 20000 },
       "tank": {
         "propellants": [ { "resource": "LOX", "mass": 75000 }, { "resource": "RP-1", "mass": 32000 } ],
         "pressure": 340000, "pressurantMass": 70
@@ -179,6 +180,7 @@
       "engine": {
         "fuel": "RP-1", "oxidizer": "LOX", "mixtureRatio": 2.36,
         "vacuumThrust": 8227000, "vacuumIsp": 311, "seaLevelIsp": 282,
+        "cluster": { "ringCount": 8, "ringRadius": 1.25, "center": true, "diameter": 0.92, "length": 2.5 },
         "minThrottle": 0.4, "gimbalRangeDeg": 5, "gimbalRateDeg": 15,
         "feed": "turbopump", "spoolUpTime": 2.0, "spoolDownTime": 0.5, "minInletPressure": 250000,
         "ignitions": 3
@@ -188,7 +190,7 @@
       "id": "engine-harrier-vac", "name": "HX-V Vacuum Engine", "category": "engine",
       "mass": 500, "length": 4.0, "diameter": 2.4, "shape": "frustum", "dragCoefficient": 0.6,
       "color": [0.30, 0.28, 0.27],
-      "model": { "file": "nasa/ssme.glb", "rotationDeg": [0, 0, 90], "fit": "stretch" },
+      "model": { "file": "parts/harrier-vacuum.glb", "fit": "stretch" },
       "engine": {
         "fuel": "RP-1", "oxidizer": "LOX", "mixtureRatio": 2.36,
         "vacuumThrust": 981000, "vacuumIsp": 348, "seaLevelIsp": 100,
@@ -205,6 +207,7 @@
       "engine": {
         "fuel": "RP-1", "oxidizer": "LOX", "mixtureRatio": 2.27,
         "vacuumThrust": 39300000, "vacuumIsp": 304, "seaLevelIsp": 263,
+        "cluster": { "ringCount": 4, "ringRadius": 3.2, "center": true, "diameter": 3.1, "length": 5.2 },
         "minThrottle": 1.0, "gimbalRangeDeg": 6, "gimbalRateDeg": 5,
         "feed": "turbopump", "spoolUpTime": 3.0, "spoolDownTime": 0.8, "minInletPressure": 200000,
         "ignitions": 1
@@ -218,6 +221,7 @@
       "engine": {
         "fuel": "LH2", "oxidizer": "LOX", "mixtureRatio": 5.5,
         "vacuumThrust": 5165000, "vacuumIsp": 421, "seaLevelIsp": 200,
+        "cluster": { "ringCount": 4, "ringRadius": 2.6, "center": true, "diameter": 1.9, "length": 2.9 },
         "minThrottle": 1.0, "gimbalRangeDeg": 7, "gimbalRateDeg": 8,
         "feed": "turbopump", "spoolUpTime": 2.5, "spoolDownTime": 0.5, "minInletPressure": 200000,
         "ignitions": 1

@@ -7,17 +7,7 @@ layout(location = 1) in vec3 vNormal;
 layout(location = 2) in vec4 vTangent;
 layout(location = 3) in vec2 vUv;
 
-// Mirrors MaterialUniforms in Rendering/ModelLibrary.cs.
-layout(set = 1, binding = 0) uniform Material {
-
-    vec4 baseColor;
-    vec4 emissive;
-    vec4 params;
-    vec4 flags;
-
-} material;
-
-layout(set = 1, binding = 1) uniform sampler2D baseColorMap;
+#include "mesh_material.glsl"
 layout(set = 1, binding = 2) uniform sampler2D metallicRoughnessMap;
 layout(set = 1, binding = 3) uniform sampler2D normalMap;
 layout(set = 1, binding = 4) uniform sampler2D occlusionMap;
@@ -65,6 +55,8 @@ void main() {
     s.albedo = base.rgb;
     s.metallic = clamp(material.params.x * mr.b, 0.0, 1.0);
     s.roughness = clamp(material.params.y * mr.g, 0.0, 1.0);
+    vec3 variation = fwidth(n);
+    s.roughness = sqrt(min(1.0, s.roughness * s.roughness + min(dot(variation, variation) * 0.35, 0.18)));
     s.occlusion = 1.0 + material.params.z * (texture(occlusionMap, vUv).r - 1.0);
     s.emissive = material.emissive.rgb * texture(emissiveMap, vUv).rgb;
     s.reflectance = 0.04;

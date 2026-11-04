@@ -52,6 +52,8 @@ public sealed class TerrainData {
 
     public double CraterDensity { get; set; } = 0.55;
 
+    public double OrbitalDetailScale { get; set; } = 1;
+
     public Dictionary<string, double[]> Colors { get; set; } = [];
 
     // Detail materials drawn over the palette colours up close, keyed by TerrainChannel name.
@@ -89,5 +91,19 @@ public sealed class SiteData {
 
     // The pad never sits lower than this, keeping coastal sites dry.
     public double MinimumHeight { get; set; } = 5;
+
+    public List<GroveData> Groves { get; set; } = [];
+
+}
+
+public sealed class GroveData {
+
+    public required string Model { get; set; }
+    public int Count { get; set; }
+    public int Seed { get; set; }
+
+    public double InnerRadius { get; set; }
+    public double OuterRadius { get; set; }
+    public double FootprintRadius { get; set; }
 
 }

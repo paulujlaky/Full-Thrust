@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Brutal.Numerics;
 using FullThrust.Core.Parts;
+using FullThrust.Core.Rendering;
 
 namespace FullThrust.Core.Craft;
 
@@ -40,6 +41,11 @@ public sealed class RocketPartData {
 
     public double AngleDeg { get; set; }
 
+    // Metres to the mounting surface where a tapered parent narrows below its nominal radius.
+    public double? MountRadius { get; set; }
+
+    public string? EngineShroud { get; set; }
+
 }
 
 public readonly struct PresetPart {
@@ -51,16 +57,18 @@ public readonly struct PresetPart {
     public readonly int Stage;
 
     public readonly bool Radial;
+    public readonly ModelDefinition? Shroud;
 
     public readonly double3 Position;
     public readonly doubleQuat Rotation;
 
-    public PresetPart(PartDefinition definition, int parent, int stage, bool radial, double3 position, doubleQuat rotation) {
+    public PresetPart(PartDefinition definition, int parent, int stage, bool radial, double3 position, doubleQuat rotation, ModelDefinition? shroud = null) {
 
         Definition = definition;
         Parent = parent;
         Stage = stage;
         Radial = radial;
+        Shroud = shroud;
         Position = position;
         Rotation = rotation;
 
@@ -276,8 +284,12 @@ public static class RocketCatalogLoader {
             if (entry.Radial <= 0) {
 
                 var y = parent.Position.Y - parentLength / 2 - definition.Length / 2;
+                var diameter = definition.Radius * 2;
+                var shroud = entry.EngineShroud is { } file
+                    ? catalog.Models.Register(file, fit: ModelFit.Stretch, fitSize: new double3(diameter, parentLength, diameter), offset: new double3(0, (definition.Length + parentLength) * 0.5, 0))
+                    : null;
 
-                parts.Add(new PresetPart(definition, parentIndex, entry.Stage, false, new double3(parent.Position.X, y, parent.Position.Z), doubleQuat.Identity));
+                parts.Add(new PresetPart(definition, parentIndex, entry.Stage, false, new double3(parent.Position.X, y, parent.Position.Z), doubleQuat.Identity, shroud));
                 lastStack = i;
 
                 continue;
@@ -285,7 +297,7 @@ public static class RocketCatalogLoader {
             }
 
             var height = parent.Position.Y - parentLength / 2 + Math.Clamp(entry.Height, 0, 1) * parentLength;
-            var distance = parent.Definition.Radius + definition.Radius;
+            var distance = (entry.MountRadius ?? parent.Definition.Radius) + definition.Radius;
 
             for (var k = 0; k < entry.Radial; k++) {
 
